@@ -7592,6 +7592,7 @@ local aa = {
                     Min = f.Min,
                     Max = f.Max,
                     Rounding = f.Rounding,
+                    Suffix = f.Suffix or "",
                     Callback = f.Callback or function(h)
                         end,
                     Type = "Slider"
@@ -7638,7 +7639,7 @@ local aa = {
                         TextXAlignment = Enum.TextXAlignment.Right,
                         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
                         BackgroundTransparency = 1,
-                        Size = UDim2.new(0, 100, 0, 14),
+                        Size = UDim2.new(0, 120, 0, 14),
                         Position = UDim2.new(0, -4, 0.5, 0),
                         AnchorPoint = Vector2.new(1, 0.5),
                         ThemeTag = {TextColor3 = "SubText"}
@@ -7700,9 +7701,13 @@ local aa = {
                 p.Value = g:Round(math.clamp(s, h.Min, h.Max), h.Rounding)
                 k.Position = UDim2.new((p.Value - h.Min) / (h.Max - h.Min), -10, 0.5, 0)
                 m.Size = UDim2.fromScale((p.Value - h.Min) / (h.Max - h.Min), 1)
-                n.Text = tostring(p.Value)
+                n.Text = tostring(p.Value) .. p.Suffix
                 g:SafeCallback(h.Callback, p.Value)
                 g:SafeCallback(h.Changed, p.Value)
+            end
+            function h.SetSuffix(p, suffix)
+                p.Suffix = suffix == nil and "" or tostring(suffix)
+                n.Text = tostring(p.Value) .. p.Suffix
             end
             function h.Destroy(p)
                 j:Destroy()
