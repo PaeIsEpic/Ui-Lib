@@ -6536,6 +6536,7 @@ local aa = {
                     Value = j.Default,
                     Multi = j.Multi,
                     Buttons = {},
+                    OptionImages = j.OptionImages or j.Images or {},
                     Opened = false,
                     Type = "Dropdown",
                     Callback = j.Callback or function()
@@ -6968,6 +6969,56 @@ local aa = {
                 end)
             end
             
+            local function _resolveDropdownOptionImage(source)
+                if source == nil then return "" end
+
+                if typeof(source) == "Instance" and source:IsA("Player") then
+                    source = {UserId = source.UserId}
+                elseif type(source) == "table" then
+                    if source.Image ~= nil then
+                        return _resolveDropdownOptionImage(source.Image)
+                    end
+                    local userId = source.UserId or source.userId
+                    if userId then
+                        local thumbType = source.ThumbnailType or Enum.ThumbnailType.HeadShot
+                        local thumbSize = source.ThumbnailSize or Enum.ThumbnailSize.Size100x100
+                        local ok, image = pcall(function()
+                            local Players = game:GetService("Players")
+                            local content = Players:GetUserThumbnailAsync(
+                                tonumber(userId), thumbType, thumbSize
+                            )
+                            return content
+                        end)
+                        return (ok and image) or ""
+                    end
+                    return ""
+                elseif type(source) == "number" then
+                    source = "rbxassetid://" .. tostring(source)
+                end
+
+                if type(source) ~= "string" or source == "" then return "" end
+                if source:match("^rbxassetid://") or source:match("^rbxasset://") then
+                    return source
+                end
+                if source:match("^%d+$") then
+                    return "rbxassetid://" .. source
+                end
+                if source:match("^https?://") then
+                    local ok, asset = pcall(function()
+                        return k.MediaManager and k.MediaManager:Image(source)
+                    end)
+                    return (ok and asset) or ""
+                end
+                return ""
+            end
+
+            local function _getDropdownOptionImage(value)
+                local images = l.OptionImages
+                if type(images) ~= "table" then return nil end
+                if images[value] ~= nil then return images[value] end
+                return images[tostring(value)]
+            end
+
             function l.BuildDropdownList(B)
                 local C, D = l.Values, {}
                 l.Buttons = {}
@@ -7050,7 +7101,26 @@ local aa = {
                             L.Size = UDim2.new(1,-82,1,0)
                         end
                     end
+                    local optionImageSource = _getDropdownOptionImage(I)
+                    local optionImage
+                    if optionImageSource ~= nil then
+                        optionImage = e("ImageLabel", {
+                            Name = "OptionImage",
+                            Size = UDim2.fromOffset(22, 22),
+                            Position = UDim2.new(0, 9, 0.5, 0),
+                            AnchorPoint = Vector2.new(0, 0.5),
+                            BackgroundTransparency = 1,
+                            ScaleType = Enum.ScaleType.Fit,
+                            Image = "",
+                            ZIndex = 24,
+                        })
+                        e("UICorner", {CornerRadius = UDim.new(1, 0), Parent = optionImage})
+                        L.Position = UDim2.fromOffset(38, 0)
+                        L.Size = UDim2.new(1, -42, 1, 0)
+                    end
+
                     local btnChildren = {K, L, e("UICorner",{CornerRadius=UDim.new(0,6)})}
+                    if optionImage then table.insert(btnChildren, optionImage) end
                     for _,sw in ipairs(swatches) do table.insert(btnChildren,sw) end
                     local M, N =
                         (e(
@@ -7065,6 +7135,16 @@ local aa = {
                         },
                         btnChildren
                     ))
+
+                    if optionImage then
+                        task.spawn(function()
+                            local resolved = _resolveDropdownOptionImage(optionImageSource)
+                            if optionImage and optionImage.Parent and resolved ~= "" then
+                                optionImage.Image = resolved
+                            end
+                        end)
+                    end
+
                     if j.Multi then
                         N = l.Value[I]
                     else
@@ -7183,6 +7263,36 @@ local aa = {
                     y()
                 end)
             end
+            function l.SetOptionImage(B, optionValue, imageSource)
+                l.OptionImages = l.OptionImages or {}
+                if imageSource == nil then
+                    l.OptionImages[optionValue] = nil
+                    l.OptionImages[tostring(optionValue)] = nil
+                else
+                    l.OptionImages[optionValue] = imageSource
+                end
+                l:BuildDropdownList()
+                l:Display()
+            end
+
+            function l.SetOptionImages(B, imageMap)
+                l.OptionImages = type(imageMap) == "table" and imageMap or {}
+                l:BuildDropdownList()
+                l:Display()
+            end
+
+            function l.SetOptionProfileImage(B, optionValue, userId, thumbnailType, thumbnailSize)
+                l:SetOptionImage(optionValue, {
+                    UserId = userId,
+                    ThumbnailType = thumbnailType or Enum.ThumbnailType.HeadShot,
+                    ThumbnailSize = thumbnailSize or Enum.ThumbnailSize.Size100x100,
+                })
+            end
+
+            function l.GetOptionImage(B, optionValue)
+                return _getDropdownOptionImage(optionValue)
+            end
+
             function l.SetValues(B, C)
                 if C then
                     l.Values = C
