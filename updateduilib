@@ -1304,7 +1304,66 @@ local aa = {
             local obj        = Config.Object
             local aspectRatio= Config.AspectRatio
 
-            assert(obj, "Viewport - Missing Object")
+            -- Viewport can now accept either an Instance (including a character Model),
+            -- a Player, or a Player.Character model. Player objects are resolved to their
+            -- current character before the viewport is built.
+            if typeof(obj) == "Instance" and obj:IsA("Player") then
+                obj = obj.Character or obj.CharacterAdded:Wait()
+            end
+            if typeof(Config.Player) == "Instance" and Config.Player:IsA("Player") then
+                obj = Config.Player.Character or Config.Player.CharacterAdded:Wait()
+            end
+
+            assert(typeof(obj) == "Instance", "Viewport - Missing/Invalid Object")
+            assert(
+                obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Folder"),
+                "Viewport - Object must be a BasePart, Model, Folder, or Player"
+            )
+
+            local function prepareViewportObject(source, shouldClone)
+                local target = source
+                if shouldClone then
+                    local ok, cloned = pcall(function() return source:Clone() end)
+                    if not ok or not cloned then
+                        return nil, "Viewport - Object could not be cloned. Make sure Archivable is true."
+                    end
+                    target = cloned
+                end
+
+                -- A character model can contain scripts/local scripts and other runtime
+                -- objects that aren't useful inside a viewport. Remove executable objects
+                -- and make preview geometry non-colliding/non-queryable.
+                if target:IsA("Model") or target:IsA("Folder") then
+                    for _, descendant in ipairs(target:GetDescendants()) do
+                        if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+                            pcall(function() descendant:Destroy() end)
+                        elseif descendant:IsA("BasePart") then
+                            pcall(function()
+                                descendant.CanCollide = false
+                                descendant.CanTouch = false
+                                descendant.CanQuery = false
+                                descendant.CastShadow = false
+                            end)
+                        end
+                    end
+                elseif target:IsA("BasePart") then
+                    pcall(function()
+                        target.CanCollide = false
+                        target.CanTouch = false
+                        target.CanQuery = false
+                        target.CastShadow = false
+                    end)
+                end
+
+                return target
+            end
+
+            local initialClone = Config.Clone == true
+            local preparedObj, prepareErr = prepareViewportObject(obj, initialClone)
+            if not preparedObj then
+                error(prepareErr or "Viewport - Failed to prepare Object")
+            end
+            obj = preparedObj
 
             local vp = {
                 __type      = "Viewport",
@@ -1397,7 +1456,18 @@ local aa = {
             vpInner.CurrentCamera = vp.Camera
             vpInner.Active = vp.Interactive
             vpInner.Parent = canvas
-            vp.Object.Parent = vpInner
+
+            -- WorldModel gives character/player rigs a proper 3D world inside the
+            -- ViewportFrame instead of treating the rig as a plain UI child.
+            local worldModel = Instance.new("WorldModel")
+            worldModel.Name = "WorldModel"
+            worldModel.Parent = vpInner
+            vp.Object.Parent = worldModel
+            vp.WorldModel = worldModel
+
+            if not vp.Camera.Parent then
+                vp.Camera.Parent = vpInner
+            end
 
             local stroke = Instance.new("UIStroke")
             stroke.Transparency = 0.6
@@ -1504,10 +1574,22 @@ local aa = {
             if vp.Focused then focusCamera() end
 
             function vp:SetObject(obj, clone)
-                if clone then obj = obj:Clone() end
-                if vp.Object then vp.Object:Destroy() end
-                vp.Object = obj
-                vp.Object.Parent = vpInner
+                if typeof(obj) == "Instance" and obj:IsA("Player") then
+                    obj = obj.Character or obj.CharacterAdded:Wait()
+                end
+                if typeof(obj) ~= "Instance" then return false end
+                local prepared, err = prepareViewportObject(obj, clone == true)
+                if not prepared then
+                    warn(err or "Viewport - Failed to prepare Object")
+                    return false
+                end
+                if vp.Object then pcall(function() vp.Object:Destroy() end) end
+                vp.Object = prepared
+                vp.Object.Parent = worldModel
+                if vp.Focused then
+                    focusCamera()
+                end
+                return true
             end
             function vp:SetHeight(h)
                 vp.Height = h
@@ -7819,12 +7901,63 @@ local aa = {
             local ratio = opts.AspectRatio or "16:9"
             local radius = opts.Radius or 8
             local src = opts.Image or ""
+
+            -- Supports Roblox thumbnails directly. Usage examples:
+            -- Image = game.Players.LocalPlayer.UserId
+            -- UserId = game.Players.LocalPlayer.UserId
+            -- Image = game.Players.LocalPlayer
+            -- Image = "rbxthumb://type=AvatarHeadShot&id=123&w=420&h=420"
             local function resolve(src)
+                local Players = game:GetService("Players")
+
+                if typeof(src) == "Instance" and src:IsA("Player") then
+                    src = src.UserId
+                end
+
+                if opts.UserId ~= nil then
+                    src = opts.UserId
+                end
+
+                if type(src) == "number" then
+                    local ok, content = pcall(function()
+                        local image, isReady = Players:GetUserThumbnailAsync(
+                            src,
+                            opts.ThumbnailType or Enum.ThumbnailType.HeadShot,
+                            opts.ThumbnailSize or Enum.ThumbnailSize.Size420x420
+                        )
+                        return image
+                    end)
+                    if ok and content and content ~= "" then
+                        return content
+                    end
+                    return ""
+                end
+
+                if type(src) ~= "string" or src == "" then return "" end
+                if src:match("^rbxthumb://") or src:match("^rbxassetid://") or src:match("^rbxasset://") then
+                    return src
+                end
+
+                -- Accept common Roblox thumbnail URLs and convert them locally through
+                -- GetUserThumbnailAsync so ImageLabel doesn't depend on HTTP downloading.
+                local uid = src:match("[?&]userId=(%d+)") or src:match("[?&]userid=(%d+)")
+                if uid then
+                    local ok, content = pcall(function()
+                        local image = Players:GetUserThumbnailAsync(
+                            tonumber(uid),
+                            opts.ThumbnailType or Enum.ThumbnailType.HeadShot,
+                            opts.ThumbnailSize or Enum.ThumbnailSize.Size420x420
+                        )
+                        return image
+                    end)
+                    if ok and content and content ~= "" then return content end
+                end
+
+                -- Keep numeric asset IDs working as before when they are passed as strings.
+                if src:match("^%d+$") then return "rbxassetid://"..src end
+
                 local mm = d.Library and d.Library.MediaManager
                 if mm then return mm:Image(src) end
-                if type(src)~="string" or src=="" then return "" end
-                if src:match("^rbxassetid://") or src:match("^rbxasset://") then return src end
-                if src:match("^%d+$") then return "rbxassetid://"..src end
                 return ""
             end
             local function parseRatio(r)
@@ -7859,6 +7992,17 @@ local aa = {
             u("UICorner", {CornerRadius = UDim.new(0, radius), Parent = img})
             local mod = {Frame = wrap, Type = "Image"}
             function mod:SetImage(src) img.Image = resolve(src) end
+            function mod:SetUserId(userId)
+                opts.UserId = userId
+                img.Image = resolve(userId)
+            end
+            function mod:SetThumbnailType(thumbType, thumbSize)
+                opts.ThumbnailType = thumbType or Enum.ThumbnailType.HeadShot
+                opts.ThumbnailSize = thumbSize or Enum.ThumbnailSize.Size420x420
+                if opts.UserId ~= nil then
+                    img.Image = resolve(opts.UserId)
+                end
+            end
             function mod:SetAspectRatio(r)
                 ratioNum = parseRatio(r)
                 _recalcAspect()
