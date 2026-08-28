@@ -6521,63 +6521,119 @@ local aa = {
         local c, d = ac(aj.Creator), ac(aj.Packages.Flipper)
         local e, f, g = c.New, aj.Components, {}
         local _RS_dd = game:GetService("RunService")
+
+        -- Dropdown shine uses ONE RenderStepped connection per open dropdown.
+        -- The previous implementation created one connection per UIGradient and
+        -- another per UIStroke, which scales badly when dropdowns are rebuilt.
         local function _clearDropShine(state)
-            if state._shineConns then
-                for _, conn in ipairs(state._shineConns) do
-                    pcall(function() conn:Disconnect() end)
-                end
-                table.clear(state._shineConns)
+            if state and state._shineConn then
+                pcall(function() state._shineConn:Disconnect() end)
+                state._shineConn = nil
             end
+            state._shineGradients = nil
+            state._shineStrokes = nil
         end
+
         local function _applyDropShine(state, root, elementAnimated)
             _clearDropShine(state)
-            state._shineConns = {}
-            if not elementAnimated then return end
-            local objs = root:GetDescendants()
-            for _, obj in ipairs(objs) do
+
+            if not elementAnimated or not root then
+                return
+            end
+
+            local shineCfg = c.GetThemeProperty("Shine")
+            if type(shineCfg) ~= "table" then
+                return
+            end
+
+            local gradients = {}
+            local strokes = {}
+
+            for _, obj in ipairs(root:GetDescendants()) do
                 if obj:IsA("UIGradient") then
-                    local conn
-                    conn = _RS_dd.RenderStepped:Connect(function(dt)
-                        local shineCfg = c.GetThemeProperty("Shine")
-                        if not shineCfg then return end
-                        local Speed = shineCfg.Speed or 0.5
-                        local RotationSpeed = shineCfg.RotationSpeed or 25
-                        local ColorSeq = shineCfg.ColorSequence
-                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
-                        obj:SetAttribute("_t", t)
-                        obj.Rotation = (t * RotationSpeed) % 360
-                        obj.Offset = Vector2.new(math.sin(t * 0.6) * 0.18, obj.Offset.Y)
-                        if ColorSeq then obj.Color = ColorSeq end
-                    end)
-                    table.insert(state._shineConns, conn)
-                end
-                if obj:IsA("UIStroke") then
-                    local conn
-                    conn = _RS_dd.RenderStepped:Connect(function(dt)
-                        local shineCfg = c.GetThemeProperty("Shine")
-                        local Speed = (shineCfg and shineCfg.Speed) or 0.5
-                        local strokeDark = c.GetThemeProperty("StrokeDark") or c.GetThemeProperty("AcrylicBorder")
-                        local accent = c.GetThemeProperty("Accent")
-                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
-                        obj:SetAttribute("_t", t)
-                        if strokeDark and accent then
-                            local pulse = (math.sin(t) + 1) / 2
-                            obj.Thickness = 1.25 + pulse * 1.25
-                            obj.Color = strokeDark:Lerp(accent, pulse)
-                        end
-                    end)
-                    table.insert(state._shineConns, conn)
+                    gradients[#gradients + 1] = obj
+                    if shineCfg.ColorSequence then
+                        obj.Color = shineCfg.ColorSequence
+                    end
+                elseif obj:IsA("UIStroke") then
+                    strokes[#strokes + 1] = obj
                 end
             end
+
+            if #gradients == 0 and #strokes == 0 then
+                return
+            end
+
+            state._shineGradients = gradients
+            state._shineStrokes = strokes
+            state._shineTime = 0
+
+            local speed = tonumber(shineCfg.Speed) or 0.5
+            local rotationSpeed = tonumber(shineCfg.RotationSpeed) or 25
+            local colorSequence = shineCfg.ColorSequence
+
+            state._shineConn = _RS_dd.RenderStepped:Connect(function(dt)
+                if not root.Parent or not root.Visible then
+                    return
+                end
+
+                state._shineTime += dt * speed
+                local current = state._shineTime
+
+                for idx = #gradients, 1, -1 do
+                    local gradient = gradients[idx]
+                    if not gradient or not gradient.Parent then
+                        table.remove(gradients, idx)
+                    else
+                        gradient.Rotation = (current * rotationSpeed) % 360
+                        gradient.Offset = Vector2.new(
+                            math.sin(current * 0.6) * 0.18,
+                            gradient.Offset.Y
+                        )
+                        -- Keep the theme ColorSequence stable; don't allocate a new
+                        -- ColorSequence assignment every render frame.
+                        if colorSequence and gradient.Color ~= colorSequence then
+                            gradient.Color = colorSequence
+                        end
+                    end
+                end
+
+                local strokeDark = c.GetThemeProperty("StrokeDark")
+                    or c.GetThemeProperty("AcrylicBorder")
+                local accent = c.GetThemeProperty("Accent")
+
+                if strokeDark and accent then
+                    local pulse = (math.sin(current) + 1) / 2
+                    local thickness = 1.25 + pulse * 1.25
+                    local strokeColor = strokeDark:Lerp(accent, pulse)
+
+                    for idx = #strokes, 1, -1 do
+                        local stroke = strokes[idx]
+                        if not stroke or not stroke.Parent then
+                            table.remove(strokes, idx)
+                        else
+                            stroke.Thickness = thickness
+                            stroke.Color = strokeColor
+                        end
+                    end
+                end
+
+                if #gradients == 0 and #strokes == 0 then
+                    _clearDropShine(state)
+                end
+            end)
         end
         g.__index = g
         g.__type = "Dropdown"
+        -- Shared registry of currently open dropdowns.
+        local _openDropdowns = setmetatable({}, {__mode = "k"})
         local function _installDropdownCloser(lib)
             if not lib or lib._CloseAllDropdowns then return end
             function lib._CloseAllDropdowns()
-                for _, frame in ipairs(lib.OpenFrames or {}) do
-                    local owner = frame and frame._DropdownOwner
-                    if owner and owner.Opened then owner:Close() end
+                for dropdown in next, _openDropdowns do
+                    if dropdown and dropdown.Opened then
+                        pcall(function() dropdown:Close() end)
+                    end
                 end
             end
         end
@@ -6588,7 +6644,6 @@ local aa = {
         -- Shared registry of currently open dropdowns, so the global "Animated Window" toggle
         -- can immediately re-apply or clear shine on dropdowns that are already open, instead
         -- of waiting for the user to close and reopen them.
-        local _openDropdowns = setmetatable({}, {__mode = "k"})
         local function _registerShineRefresh(lib)
             if lib and not lib._RefreshOpenDropdownShine then
                 lib._RefreshOpenDropdownShine = function()
@@ -7351,7 +7406,27 @@ local aa = {
             end
 
             function l.SetOptionImages(B, imageMap)
-                l.OptionImages = type(imageMap) == "table" and imageMap or {}
+                local newMap = type(imageMap) == "table" and imageMap or {}
+                local oldMap = l.OptionImages or {}
+                local same = true
+
+                local oldCount, newCount = 0, 0
+                for key, value in pairs(oldMap) do
+                    oldCount += 1
+                    if newMap[key] ~= value then same = false break end
+                end
+                if same then
+                    for key, value in pairs(newMap) do
+                        newCount += 1
+                        if oldMap[key] ~= value then same = false break end
+                    end
+                end
+
+                if same and oldCount == newCount then
+                    return
+                end
+
+                l.OptionImages = newMap
                 l:BuildDropdownList()
                 l:Display()
             end
@@ -7411,6 +7486,14 @@ local aa = {
                 k:SafeCallback(l.Changed, l.Value)
             end
             function l.Destroy(B)
+                _clearDropShine(l)
+                if l.Opened then
+                    l.Opened = false
+                    _openDropdowns[l] = nil
+                end
+                if l._outsideSide and _outsideSideOwner[l._outsideSide] == l then
+                    _outsideSideOwner[l._outsideSide] = nil
+                end
                 m:Destroy()
                 k.Options[i] = nil
             end
