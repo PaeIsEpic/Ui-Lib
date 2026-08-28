@@ -7185,7 +7185,7 @@ local aa = {
                     source = "rbxassetid://" .. tostring(source)
                 end
 
-                if type(source) ~= "string" or source == "" then return ""
+                if type(source) ~= "string" or source == "" then return "" end
                 if source:match("^rbxassetid://") or source:match("^rbxasset://") then
                     return source
                 end
