@@ -1638,6 +1638,7 @@ local aa = {
         z.ProgressBar = z["AddProgressBar"]
         function x.CreateWindow(C, D)
             assert(D.Title, "Window - Missing Title")
+            D.Size = D.Size or UDim2.fromOffset(760, 560)
             if x.Window then
                 print "You cannot create more than one window."
                 return
@@ -4138,35 +4139,42 @@ local aa = {
                 setmetatable(B, v)
                 return B
             end
-            -- Safe two-column groupbox helpers.
-            local function _newGroupbox(tab, side, title, iconKey)
+            -- Obsidian-style left/right groupboxes.
+            -- Each groupbox owns its own bordered container and control list.
+            local function _getGroupboxRow(tab, side)
                 tab._GroupboxRows = tab._GroupboxRows or {}
                 local row = tab._GroupboxRows[#tab._GroupboxRows]
+
                 if not row or not row.Parent or row[side] then
                     tab._elementCount = (tab._elementCount or 0) + 1
                     row = j.New("Frame", {
-                        Name = "GroupboxRow" .. tostring(tab._elementCount),
+                        Name = "GroupboxRow_" .. tostring(tab._elementCount),
                         Size = UDim2.new(1, 0, 0, 0),
                         AutomaticSize = Enum.AutomaticSize.Y,
                         BackgroundTransparency = 1,
+                        BorderSizePixel = 0,
                         LayoutOrder = tab._elementCount,
                         Parent = tab.Container,
-                    }, {
-                        j.New("UIListLayout", {
-                            FillDirection = Enum.FillDirection.Horizontal,
-                            Padding = UDim.new(0, 6),
-                            SortOrder = Enum.SortOrder.LayoutOrder,
-                        })
                     })
+
+                    j.New("UIListLayout", {
+                        FillDirection = Enum.FillDirection.Horizontal,
+                        HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                        VerticalAlignment = Enum.VerticalAlignment.Top,
+                        Padding = UDim.new(0, 6),
+                        SortOrder = Enum.SortOrder.LayoutOrder,
+                        Parent = row,
+                    })
+
                     tab._GroupboxRows[#tab._GroupboxRows + 1] = row
                 end
 
-                -- Create a normal Section and move its root into a half-width holder.
-                -- This preserves the library's existing control methods/behavior.
-                local sec = tab:AddSection(title, iconKey)
-                local root = sec.Container and sec.Container.Parent
-                if not root then return sec end
+                return row
+            end
 
+            local function _newGroupbox(tab, side, title, iconKey)
+                local row = _getGroupboxRow(tab, side)
+                local parent = row
                 local holder = j.New("Frame", {
                     Name = side .. "Groupbox",
                     Size = UDim2.new(0.5, -3, 0, 0),
@@ -4174,23 +4182,123 @@ local aa = {
                     BackgroundTransparency = 0.04,
                     BorderSizePixel = 0,
                     LayoutOrder = side == "Left" and 1 or 2,
-                    Parent = row,
+                    Parent = parent,
                     ThemeTag = {BackgroundColor3 = "Element"},
                 })
                 j.New("UICorner", {CornerRadius = UDim.new(0, 8), Parent = holder})
-                j.New("UIStroke", {Thickness = 1, Transparency = 0.5, ThemeTag = {Color = "InElementBorder"}, Parent = holder})
-                root.Parent = holder
-                root.LayoutOrder = 1
-                return sec
+                j.New("UIStroke", {
+                    Thickness = 1,
+                    Transparency = 0.5,
+                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+                    ThemeTag = {Color = "InElementBorder"},
+                    Parent = holder,
+                })
+                j.New("UIPadding", {
+                    PaddingTop = UDim.new(0, 8),
+                    PaddingBottom = UDim.new(0, 8),
+                    PaddingLeft = UDim.new(0, 8),
+                    PaddingRight = UDim.new(0, 8),
+                    Parent = holder,
+                })
+
+                local header = j.New("Frame", {
+                    Name = "Header",
+                    Size = UDim2.new(1, 0, 0, 24),
+                    BackgroundTransparency = 1,
+                    Parent = holder,
+                })
+
+                local titleOffset = 0
+                if iconKey then
+                    local ico = j.New("ImageLabel", {
+                        Name = "Icon",
+                        Size = UDim2.fromOffset(15, 15),
+                        Position = UDim2.fromOffset(0, 4),
+                        BackgroundTransparency = 1,
+                        ImageTransparency = 0.15,
+                        ThemeTag = {ImageColor3 = "Text"},
+                        Parent = header,
+                    })
+                    titleOffset = 21
+                    task.defer(function()
+                        local lib = tab.Library or e(aj)
+                        local ic = lib and lib.GetIcon and lib:GetIcon(iconKey)
+                        if ic then
+                            if type(ic) == "table" then
+                                ico.Image = ic.Image or ""
+                                ico.ImageRectOffset = ic.ImageRectOffset or Vector2.new()
+                                ico.ImageRectSize = ic.ImageRectSize or Vector2.new()
+                            else
+                                ico.Image = tostring(ic)
+                            end
+                        end
+                    end)
+                end
+
+                j.New("TextLabel", {
+                    Name = "Title",
+                    Size = UDim2.new(1, -titleOffset, 1, 0),
+                    Position = UDim2.fromOffset(titleOffset, 0),
+                    BackgroundTransparency = 1,
+                    Text = tostring(title or "Groupbox"),
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextYAlignment = Enum.TextYAlignment.Center,
+                    FontFace = Font.new("rbxassetid://12187365364", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
+                    TextSize = 14,
+                    ThemeTag = {TextColor3 = "Text"},
+                    Parent = header,
+                })
+
+                local container = j.New("Frame", {
+                    Name = "Container",
+                    Size = UDim2.new(1, 0, 0, 0),
+                    AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1,
+                    Parent = holder,
+                })
+                j.New("UIListLayout", {
+                    Padding = UDim.new(0, 5),
+                    SortOrder = Enum.SortOrder.LayoutOrder,
+                    Parent = container,
+                })
+
+                local obj = {
+                    Type = "Groupbox",
+                    Container = container,
+                    ScrollFrame = tab.ScrollFrame or tab.Container,
+                    Frame = holder,
+                    Header = header,
+                    TitleLabel = header:FindFirstChild("Title"),
+                    _elementCount = 0,
+                    _GroupboxSide = side,
+                }
+
+                -- Keep groupbox height synchronized with its control contents.
+                local layout = container:FindFirstChildWhichIsA("UIListLayout")
+                if layout then
+                    j.AddSignal(layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+                        container.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y)
+                    end)
+                end
+
+                row[side] = holder
+                setmetatable(obj, z)
+                return obj
             end
+
             function x.AddLeftGroupbox(z, title, iconKey)
-                return _newGroupbox(x, "Left", title, iconKey)
+                return _newGroupbox(z, "Left", title, iconKey)
             end
+
             function x.AddRightGroupbox(z, title, iconKey)
-                return _newGroupbox(x, "Right", title, iconKey)
+                return _newGroupbox(z, "Right", title, iconKey)
             end
+
             x.LeftGroupbox = x.AddLeftGroupbox
             x.RightGroupbox = x.AddRightGroupbox
+            x.AddLeftGroupBox = x.AddLeftGroupbox
+            x.AddRightGroupBox = x.AddRightGroupbox
+
 
             function x.AddCollapsibleSection(z, A, iconKey, openState)
                 -- Accept the same calling convention as AddSection: (Title, Icon).
