@@ -111,59 +111,116 @@ local a, b = {
 local Animation
 do
     local _RunService = game:GetService("RunService")
-    local _state = setmetatable({}, {__mode = "k"})
-    Animation = {}
-    function Animation.Apply(theme, root, shineEnabled)
-        if not root then return end
-        local st = _state[root]
-        if st and st.conn then pcall(function() st.conn:Disconnect() end) end
-        st = {conn = nil, gradients = {}, strokes = {}}
-        _state[root] = st
-        if not theme or not shineEnabled or not theme.ShineEnabled or not theme.Shine then return end
-        local ShineConfig   = theme.Shine
-        local Speed         = ShineConfig.Speed         or 0.5
-        local RotationSpeed = ShineConfig.RotationSpeed or 25
-        local ColorSeq      = ShineConfig.ColorSequence
-        local StrokeShineOn = theme.StrokeShine
-        local StrokeFrom    = theme.StrokeDark or theme.AcrylicBorder
-        local StrokeTo      = theme.Accent
-        local _gradients, _strokes = st.gradients, st.strokes
-        for _, obj in ipairs(root:GetDescendants()) do
-            if obj:IsA("UIGradient") then
-                table.insert(_gradients, obj)
-            elseif obj:IsA("UIStroke") and StrokeShineOn then
-                table.insert(_strokes, obj)
-            end
+    local _states = setmetatable({}, {__mode = "k"})
+    local _active = {}
+    local _running = false
+    local _accum = 0
+    local _tick = 1 / 30
+    local _nextId = 0
+
+    local function removeState(root, state)
+        if state and state.slot then
+            _active[state.slot] = nil
+            state.slot = nil
         end
-        if #_gradients == 0 and #_strokes == 0 then return end
-        st.conn = _RunService.RenderStepped:Connect(function(dt)
-            for i = #_gradients, 1, -1 do
-                local obj = _gradients[i]
-                if obj.Parent then
-                    local t = (obj:GetAttribute("_t") or 0) + dt * Speed
-                    obj:SetAttribute("_t", t)
-                    obj.Rotation = (t * RotationSpeed) % 360
-                    obj.Offset = Vector2.new(math.sin(t * 0.6) * 0.18, obj.Offset.Y)
-                    if ColorSeq then obj.Color = ColorSeq end
-                else
-                    table.remove(_gradients, i)
-                end
-            end
-            if StrokeFrom and StrokeTo then
-                for i = #_strokes, 1, -1 do
-                    local obj = _strokes[i]
-                    if obj.Parent then
-                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
-                        obj:SetAttribute("_t", t)
-                        local pulse = (math.sin(t) + 1) / 2
-                        obj.Thickness = 1.25 + pulse * 1.25
-                        obj.Color = StrokeFrom:Lerp(StrokeTo, pulse)
-                    else
-                        table.remove(_strokes, i)
+        if root then _states[root] = nil end
+    end
+
+    local function startRunner()
+        if _running then return end
+        _running = true
+        _RunService.RenderStepped:Connect(function(dt)
+            _accum += dt
+            if _accum < _tick then return end
+            local stepDt = _accum
+            _accum = 0
+
+            for slot, state in pairs(_active) do
+                local root = state.root
+                if not root or not root.Parent then
+                    removeState(root, state)
+                elseif state.enabled and root.Visible then
+                    state.time += stepDt * state.speed
+                    local t = state.time
+
+                    for i = #state.gradients, 1, -1 do
+                        local obj = state.gradients[i]
+                        if obj and obj.Parent then
+                            obj.Rotation = (t * state.rotationSpeed) % 360
+                            obj.Offset = Vector2.new(math.sin(t * 0.6) * 0.18, obj.Offset.Y)
+                        else
+                            table.remove(state.gradients, i)
+                        end
+                    end
+
+                    if state.strokeEnabled and state.strokeFrom and state.strokeTo then
+                        local pulse = (math.sin(t) + 1) * 0.5
+                        local thickness = 1.25 + pulse * 1.25
+                        local color = state.strokeFrom:Lerp(state.strokeTo, pulse)
+                        for i = #state.strokes, 1, -1 do
+                            local obj = state.strokes[i]
+                            if obj and obj.Parent then
+                                obj.Thickness = thickness
+                                obj.Color = color
+                            else
+                                table.remove(state.strokes, i)
+                            end
+                        end
+                    end
+
+                    if #state.gradients == 0 and #state.strokes == 0 then
+                        removeState(root, state)
                     end
                 end
             end
         end)
+    end
+
+    Animation = {}
+
+    function Animation.Apply(theme, root, shineEnabled)
+        if not root then return end
+        local enabled = theme and shineEnabled == true and theme.ShineEnabled == true and theme.Shine ~= nil
+        local old = _states[root]
+        if old and old.theme == theme and old.enabled == enabled then return end
+        if old then removeState(root, old) end
+
+        local state = {
+            root=root, theme=theme, enabled=enabled, time=0,
+            speed=0.5, rotationSpeed=25, gradients={}, strokes={},
+            strokeEnabled=false, strokeFrom=nil, strokeTo=nil,
+        }
+        _states[root] = state
+        if not enabled then return end
+
+        local shine = theme.Shine
+        state.speed = shine.Speed or 0.5
+        state.rotationSpeed = shine.RotationSpeed or 25
+        state.strokeEnabled = theme.StrokeShine == true
+        state.strokeFrom = theme.StrokeDark or theme.AcrylicBorder
+        state.strokeTo = theme.Accent
+
+        for _, obj in ipairs(root:GetDescendants()) do
+            if obj:IsA("UIGradient") then
+                state.gradients[#state.gradients+1] = obj
+                if shine.ColorSequence then obj.Color = shine.ColorSequence end
+            elseif obj:IsA("UIStroke") and state.strokeEnabled then
+                state.strokes[#state.strokes+1] = obj
+            end
+        end
+        if #state.gradients == 0 and #state.strokes == 0 then
+            _states[root] = nil
+            return
+        end
+        _nextId += 1
+        state.slot = _nextId
+        _active[state.slot] = state
+        startRunner()
+    end
+
+    function Animation.Remove(root)
+        local state = root and _states[root]
+        if state then removeState(root, state) end
     end
 end
 if not Animation then Animation = {Apply = function() end} end
@@ -1638,7 +1695,6 @@ local aa = {
         z.ProgressBar = z["AddProgressBar"]
         function x.CreateWindow(C, D)
             assert(D.Title, "Window - Missing Title")
-            D.Size = D.Size or UDim2.fromOffset(760, 560)
             if x.Window then
                 print "You cannot create more than one window."
                 return
@@ -4139,151 +4195,134 @@ local aa = {
                 setmetatable(B, v)
                 return B
             end
-            -- Obsidian-style left/right groupboxes.
-            -- Each groupbox owns its own bordered container and control list.
-            local function _getGroupboxRow(tab, side)
-                tab._GroupboxRows = tab._GroupboxRows or {}
-                local row = tab._GroupboxRows[#tab._GroupboxRows]
-
-                if not row or not row.Parent or row[side] then
-                    tab._elementCount = (tab._elementCount or 0) + 1
-                    row = j.New("Frame", {
-                        Name = "GroupboxRow_" .. tostring(tab._elementCount),
-                        Size = UDim2.new(1, 0, 0, 0),
-                        AutomaticSize = Enum.AutomaticSize.Y,
-                        BackgroundTransparency = 1,
-                        BorderSizePixel = 0,
-                        LayoutOrder = tab._elementCount,
-                        Parent = tab.Container,
-                    })
-
-                    j.New("UIListLayout", {
-                        FillDirection = Enum.FillDirection.Horizontal,
-                        HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                        VerticalAlignment = Enum.VerticalAlignment.Top,
-                        Padding = UDim.new(0, 6),
-                        SortOrder = Enum.SortOrder.LayoutOrder,
-                        Parent = row,
-                    })
-
-                    tab._GroupboxRows[#tab._GroupboxRows + 1] = row
+            -- Two-column groupbox system inspired by the classic left/right groupbox layout.
+            -- AddLeftGroupbox/AddRightGroupbox share rows automatically, so:
+            --   local left = Tab:AddLeftGroupbox("Main")
+            --   local right = Tab:AddRightGroupbox("Settings")
+            -- places both boxes side-by-side.
+            local function _ensureGroupboxRow(tab)
+                local row = tab._GroupboxActiveRow
+                if row and row.Parent then
+                    return row
                 end
 
+                tab._elementCount = (tab._elementCount or 0) + 1
+                row = k("Frame", {
+                    Name = "GroupboxRow",
+                    Size = UDim2.new(1, -8, 0, 0),
+                    AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1,
+                    LayoutOrder = tab._elementCount,
+                    Parent = tab.Container,
+                })
+                k("UIListLayout", {
+                    FillDirection = Enum.FillDirection.Horizontal,
+                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                    VerticalAlignment = Enum.VerticalAlignment.Top,
+                    Padding = UDim.new(0, 6),
+                    Parent = row,
+                })
+                tab._GroupboxActiveRow = row
                 return row
             end
 
             local function _newGroupbox(tab, side, title, iconKey)
-                local row = _getGroupboxRow(tab, side)
-                local parent = row
-                local holder = j.New("Frame", {
+                local row = _ensureGroupboxRow(tab)
+                local occupiedKey = side == "Left" and "_GroupboxLeft" or "_GroupboxRight"
+
+                -- If this side is already occupied in the active row, start a new row.
+                if row[occupiedKey] and row[occupiedKey].Parent then
+                    tab._GroupboxActiveRow = nil
+                    row = _ensureGroupboxRow(tab)
+                end
+
+                local outer = k("Frame", {
                     Name = side .. "Groupbox",
                     Size = UDim2.new(0.5, -3, 0, 0),
                     AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundTransparency = 0.04,
+                    BackgroundTransparency = 0.18,
                     BorderSizePixel = 0,
                     LayoutOrder = side == "Left" and 1 or 2,
-                    Parent = parent,
+                    Parent = row,
                     ThemeTag = {BackgroundColor3 = "Element"},
-                })
-                j.New("UICorner", {CornerRadius = UDim.new(0, 8), Parent = holder})
-                j.New("UIStroke", {
-                    Thickness = 1,
-                    Transparency = 0.5,
-                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-                    ThemeTag = {Color = "InElementBorder"},
-                    Parent = holder,
-                })
-                j.New("UIPadding", {
-                    PaddingTop = UDim.new(0, 8),
-                    PaddingBottom = UDim.new(0, 8),
-                    PaddingLeft = UDim.new(0, 8),
-                    PaddingRight = UDim.new(0, 8),
-                    Parent = holder,
+                }, {
+                    k("UICorner", {CornerRadius = UDim.new(0, 7)}),
+                    k("UIStroke", {Transparency = 0.55, Thickness = 1, ThemeTag = {Color = "ElementBorder"}}),
                 })
 
-                local header = j.New("Frame", {
-                    Name = "Header",
-                    Size = UDim2.new(1, 0, 0, 24),
+                local header = k("Frame", {
+                    Size = UDim2.new(1, -12, 0, 28),
+                    Position = UDim2.fromOffset(6, 6),
                     BackgroundTransparency = 1,
-                    Parent = holder,
+                    Parent = outer,
                 })
 
                 local titleOffset = 0
                 if iconKey then
-                    local ico = j.New("ImageLabel", {
-                        Name = "Icon",
+                    local icon = k("ImageLabel", {
+                        Name = "GroupboxIcon",
                         Size = UDim2.fromOffset(15, 15),
-                        Position = UDim2.fromOffset(0, 4),
+                        Position = UDim2.fromOffset(0, 6),
                         BackgroundTransparency = 1,
-                        ImageTransparency = 0.15,
-                        ThemeTag = {ImageColor3 = "Text"},
                         Parent = header,
+                        ThemeTag = {ImageColor3 = "Text"},
                     })
                     titleOffset = 21
                     task.defer(function()
-                        local lib = tab.Library or e(aj)
+                        local lib = tab.Library or x
                         local ic = lib and lib.GetIcon and lib:GetIcon(iconKey)
                         if ic then
                             if type(ic) == "table" then
-                                ico.Image = ic.Image or ""
-                                ico.ImageRectOffset = ic.ImageRectOffset or Vector2.new()
-                                ico.ImageRectSize = ic.ImageRectSize or Vector2.new()
+                                icon.Image = ic.Image or ""
+                                icon.ImageRectOffset = ic.ImageRectOffset or Vector2.new()
+                                icon.ImageRectSize = ic.ImageRectSize or Vector2.new()
                             else
-                                ico.Image = tostring(ic)
+                                icon.Image = tostring(ic)
                             end
                         end
                     end)
                 end
 
-                j.New("TextLabel", {
-                    Name = "Title",
-                    Size = UDim2.new(1, -titleOffset, 1, 0),
-                    Position = UDim2.fromOffset(titleOffset, 0),
-                    BackgroundTransparency = 1,
+                k("TextLabel", {
+                    RichText = true,
                     Text = tostring(title or "Groupbox"),
+                    FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
+                    TextSize = 14,
                     TextXAlignment = Enum.TextXAlignment.Left,
                     TextYAlignment = Enum.TextYAlignment.Center,
-                    FontFace = Font.new("rbxassetid://12187365364", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
-                    TextSize = 14,
-                    ThemeTag = {TextColor3 = "Text"},
+                    Position = UDim2.fromOffset(titleOffset, 0),
+                    Size = UDim2.new(1, -titleOffset, 1, 0),
+                    BackgroundTransparency = 1,
                     Parent = header,
+                    ThemeTag = {TextColor3 = "Text"},
                 })
 
-                local container = j.New("Frame", {
-                    Name = "Container",
-                    Size = UDim2.new(1, 0, 0, 0),
+                local content = k("Frame", {
+                    Name = "GroupboxContent",
+                    Size = UDim2.new(1, -12, 0, 0),
+                    Position = UDim2.fromOffset(6, 38),
                     AutomaticSize = Enum.AutomaticSize.Y,
                     BackgroundTransparency = 1,
-                    Parent = holder,
+                    Parent = outer,
                 })
-                j.New("UIListLayout", {
+                k("UIListLayout", {
                     Padding = UDim.new(0, 5),
                     SortOrder = Enum.SortOrder.LayoutOrder,
-                    Parent = container,
+                    Parent = content,
                 })
 
-                local obj = {
-                    Type = "Groupbox",
-                    Container = container,
+                local sec = setmetatable({
+                    Container = content,
                     ScrollFrame = tab.ScrollFrame or tab.Container,
-                    Frame = holder,
-                    Header = header,
-                    TitleLabel = header:FindFirstChild("Title"),
                     _elementCount = 0,
-                    _GroupboxSide = side,
-                }
+                    Type = "Groupbox",
+                    GroupboxSide = side:lower(),
+                    Groupbox = outer,
+                }, v)
 
-                -- Keep groupbox height synchronized with its control contents.
-                local layout = container:FindFirstChildWhichIsA("UIListLayout")
-                if layout then
-                    j.AddSignal(layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
-                        container.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y)
-                    end)
-                end
-
-                row[side] = holder
-                setmetatable(obj, z)
-                return obj
+                row[occupiedKey] = outer
+                outer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function() end)
+                return sec
             end
 
             function x.AddLeftGroupbox(z, title, iconKey)
@@ -4296,9 +4335,6 @@ local aa = {
 
             x.LeftGroupbox = x.AddLeftGroupbox
             x.RightGroupbox = x.AddRightGroupbox
-            x.AddLeftGroupBox = x.AddLeftGroupbox
-            x.AddRightGroupBox = x.AddRightGroupbox
-
 
             function x.AddCollapsibleSection(z, A, iconKey, openState)
                 -- Accept the same calling convention as AddSection: (Title, Icon).
@@ -4490,6 +4526,10 @@ local aa = {
             end
             x.Section = x.AddSection
             x.CollapsibleSection = x.AddCollapsibleSection
+            x.LeftGroupbox = x.AddLeftGroupbox
+            x.RightGroupbox = x.AddRightGroupbox
+            x.AddLeftGroupBox = x.AddLeftGroupbox
+            x.AddRightGroupBox = x.AddRightGroupbox
             setmetatable(x, v)
             return x
         end
@@ -5714,6 +5754,7 @@ local aa = {
                 end)
             end
             function v.Hide(M)
+                if e(k)._CloseAllDropdowns then pcall(e(k)._CloseAllDropdowns) end
                 v.Minimized = true
                 v.Root.Visible = false
                 pcall(function()
@@ -5722,6 +5763,7 @@ local aa = {
                 end)
             end
             function v.Minimize(M)
+                if not v.Minimized and e(k)._CloseAllDropdowns then pcall(e(k)._CloseAllDropdowns) end
                 v.Minimized = not v.Minimized
                 v.Root.Visible = not v.Minimized
                 pcall(function()
@@ -6621,56 +6663,27 @@ local aa = {
             ab.Parent.Parent
         local c, d = ac(aj.Creator), ac(aj.Packages.Flipper)
         local e, f, g = c.New, aj.Components, {}
-        local _RS_dd = game:GetService("RunService")
         local function _clearDropShine(state)
-            if state._shineConns then
-                for _, conn in ipairs(state._shineConns) do
-                    pcall(function() conn:Disconnect() end)
-                end
-                table.clear(state._shineConns)
+            if state._shineRoot and Animation and Animation.Remove then
+                Animation.Remove(state._shineRoot)
             end
+            state._shineRoot = nil
+            state._shineConns = nil
         end
         local function _applyDropShine(state, root, elementAnimated)
             _clearDropShine(state)
-            state._shineConns = {}
-            if not elementAnimated then return end
-            local objs = root:GetDescendants()
-            for _, obj in ipairs(objs) do
-                if obj:IsA("UIGradient") then
-                    local conn
-                    conn = _RS_dd.RenderStepped:Connect(function(dt)
-                        local shineCfg = c.GetThemeProperty("Shine")
-                        if not shineCfg then return end
-                        local Speed = shineCfg.Speed or 0.5
-                        local RotationSpeed = shineCfg.RotationSpeed or 25
-                        local ColorSeq = shineCfg.ColorSequence
-                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
-                        obj:SetAttribute("_t", t)
-                        obj.Rotation = (t * RotationSpeed) % 360
-                        obj.Offset = Vector2.new(math.sin(t * 0.6) * 0.18, obj.Offset.Y)
-                        if ColorSeq then obj.Color = ColorSeq end
-                    end)
-                    table.insert(state._shineConns, conn)
-                end
-                if obj:IsA("UIStroke") then
-                    local conn
-                    conn = _RS_dd.RenderStepped:Connect(function(dt)
-                        local shineCfg = c.GetThemeProperty("Shine")
-                        local Speed = (shineCfg and shineCfg.Speed) or 0.5
-                        local strokeDark = c.GetThemeProperty("StrokeDark") or c.GetThemeProperty("AcrylicBorder")
-                        local accent = c.GetThemeProperty("Accent")
-                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
-                        obj:SetAttribute("_t", t)
-                        if strokeDark and accent then
-                            local pulse = (math.sin(t) + 1) / 2
-                            obj.Thickness = 1.25 + pulse * 1.25
-                            obj.Color = strokeDark:Lerp(accent, pulse)
-                        end
-                    end)
-                    table.insert(state._shineConns, conn)
-                end
+            if not elementAnimated or not root then return end
+            local theme = c.GetThemeProperty("Shine") and e(aa.Themes)[k.Theme]
+            if theme and Animation and Animation.Apply then
+                Animation.Apply(theme, root, true)
+                state._shineRoot = root
             end
         end
+        local _thumbnailCache = {}
+        local function _thumbnailCacheKey(userId, thumbType, thumbSize)
+            return tostring(userId) .. "|" .. tostring(thumbType.Value) .. "|" .. tostring(thumbSize.Value)
+        end
+
         g.__index = g
         g.__type = "Dropdown"
         -- Shared across all dropdown instances: tracks which side (left/right) of the window
@@ -6681,7 +6694,15 @@ local aa = {
         -- can immediately re-apply or clear shine on dropdowns that are already open, instead
         -- of waiting for the user to close and reopen them.
         local _openDropdowns = setmetatable({}, {__mode = "k"})
+        local function _closeAllOpenDropdowns()
+            for state in next, _openDropdowns do
+                pcall(function() state:Close() end)
+            end
+        end
         local function _registerShineRefresh(lib)
+            if lib and not lib._CloseAllDropdowns then
+                lib._CloseAllDropdowns = _closeAllOpenDropdowns
+            end
             if lib and not lib._RefreshOpenDropdownShine then
                 lib._RefreshOpenDropdownShine = function()
                     for state in next, _openDropdowns do
@@ -6995,29 +7016,6 @@ local aa = {
             w()
             c.AddSignal(p:GetPropertyChangedSignal "AbsolutePosition", w)
             c.AddSignal(p:GetPropertyChangedSignal "AbsoluteSize", function() y() w() end)
-            -- OutsideWindow popups live in PopupGUI. Close them when the actual
-            -- window is hidden, otherwise the popup can visually remain behind.
-            pcall(function()
-                local windowRoot = h.Library and h.Library.Window and h.Library.Window.Root
-                if windowRoot then
-                    c.AddSignal(windowRoot:GetPropertyChangedSignal("Visible"), function()
-                        if not windowRoot.Visible and l.Opened then
-                            l:Close()
-                        end
-                    end)
-                end
-            end)
-            pcall(function()
-                local gui = h.Library and h.Library.GUI
-                if gui then
-                    c.AddSignal(gui.Destroying, function()
-                        if l.Opened then
-                            l:Close()
-                        end
-                    end)
-                end
-            end)
-
             c.AddSignal(
                 p.MouseButton1Click,
                 function()
@@ -7028,6 +7026,19 @@ local aa = {
                     end
                 end
             )
+
+            -- OutsideWindow popups live in PopupGUI, so hiding the main window does not
+            -- automatically hide them. Close any open popup whenever the window disappears.
+            pcall(function()
+                local windowRoot = h.Library and h.Library.Window and h.Library.Window.Root
+                if windowRoot then
+                    c.AddSignal(windowRoot:GetPropertyChangedSignal("Visible"), function()
+                        if not windowRoot.Visible and l.Opened then
+                            l:Close()
+                        end
+                    end)
+                end
+            end)
             c.AddSignal(
                 ag.InputBegan,
                 function(A)
@@ -7036,6 +7047,10 @@ local aa = {
                         local B, C = u.AbsolutePosition, u.AbsoluteSize
                         local insideDropdown = ah.X >= B.X and ah.X <= B.X + C.X and ah.Y >= (B.Y - 20 - 1) and ah.Y <= B.Y + C.Y
                         if insideDropdown then return end
+
+                        local PB, PC = p.AbsolutePosition, p.AbsoluteSize
+                        local onDropdownButton = ah.X >= PB.X and ah.X <= PB.X + PC.X and ah.Y >= PB.Y and ah.Y <= PB.Y + PC.Y
+                        if onDropdownButton then return end
                         if j.OutsideWindow or j.DropdownOutsideWindow then
                             local winGui = h.Library.GUI or h.Library.PopupGUI
                             local winFrame = winGui and winGui:FindFirstChildWhichIsA("Frame", true)
@@ -7171,6 +7186,8 @@ local aa = {
                     if userId then
                         local thumbType = source.ThumbnailType or Enum.ThumbnailType.HeadShot
                         local thumbSize = source.ThumbnailSize or Enum.ThumbnailSize.Size100x100
+                        local key = _thumbnailCacheKey(userId, thumbType, thumbSize)
+                        if _thumbnailCache[key] then return _thumbnailCache[key] end
                         local ok, image = pcall(function()
                             local Players = game:GetService("Players")
                             local content = Players:GetUserThumbnailAsync(
@@ -7178,7 +7195,11 @@ local aa = {
                             )
                             return content
                         end)
-                        return (ok and image) or ""
+                        if ok and image and image ~= "" then
+                            _thumbnailCache[key] = image
+                            return image
+                        end
+                        return ""
                     end
                     return ""
                 elseif type(source) == "number" then
@@ -7452,6 +7473,30 @@ local aa = {
                     y()
                 end)
             end
+            local function _imageSourceEqual(a, b)
+                if a == b then return true end
+                if typeof(a) == "Instance" and a:IsA("Player") then a = {UserId = a.UserId} end
+                if typeof(b) == "Instance" and b:IsA("Player") then b = {UserId = b.UserId} end
+                if type(a) ~= "table" or type(b) ~= "table" then return false end
+                return (a.UserId or a.userId) == (b.UserId or b.userId)
+                    and (a.Image or "") == (b.Image or "")
+                    and (a.ThumbnailType or Enum.ThumbnailType.HeadShot) == (b.ThumbnailType or Enum.ThumbnailType.HeadShot)
+                    and (a.ThumbnailSize or Enum.ThumbnailSize.Size100x100) == (b.ThumbnailSize or Enum.ThumbnailSize.Size100x100)
+            end
+
+            local function _valuesEqual(a, b)
+                if a == b then return true end
+                if type(a) ~= "table" or type(b) ~= "table" then return false end
+                local na, nb = 0, 0
+                for _, v in next, a do na += 1 end
+                for _, v in next, b do nb += 1 end
+                if na ~= nb then return false end
+                for idx, v in next, a do
+                    if b[idx] ~= v then return false end
+                end
+                return true
+            end
+
             function l.SetOptionImage(B, optionValue, imageSource)
                 l.OptionImages = l.OptionImages or {}
                 if imageSource == nil then
@@ -7465,7 +7510,19 @@ local aa = {
             end
 
             function l.SetOptionImages(B, imageMap)
-                l.OptionImages = type(imageMap) == "table" and imageMap or {}
+                imageMap = type(imageMap) == "table" and imageMap or {}
+                local oldMap = l.OptionImages or {}
+                local changed = false
+                for _, value in next, l.Values do
+                    if not _imageSourceEqual(oldMap[value], imageMap[value] ~= nil and imageMap[value] or imageMap[tostring(value)]) then
+                        changed = true
+                        break
+                    end
+                end
+                if not changed then
+                    return
+                end
+                l.OptionImages = imageMap
                 l:BuildDropdownList()
                 l:Display()
             end
@@ -7483,30 +7540,22 @@ local aa = {
             end
 
             function l.SetValues(B, C)
-                if type(C) ~= "table" then
-                    return
+                if not C then return end
+                if _valuesEqual(l.Values, C) then
+                    return false
                 end
-
-                -- Avoid rebuilding every option when a periodic refresh produces
-                -- the exact same list. This is intentionally a very small optimization
-                -- so the normal dropdown implementation remains untouched.
-                local oldValues = l.Values
-                local changed = (type(oldValues) ~= "table") or (#oldValues ~= #C)
-                if not changed then
-                    for index = 1, #C do
-                        if oldValues[index] ~= C[index] then
-                            changed = true
-                            break
-                        end
-                    end
-                end
-
-                if not changed then
-                    return
-                end
-
                 l.Values = C
                 l:BuildDropdownList()
+                return true
+            end
+
+            function l.Refresh(B, force)
+                if force then
+                    l:BuildDropdownList()
+                    l:Display()
+                    return true
+                end
+                return l:SetValues(l.Values)
             end
             function l.OnChanged(B, C)
                 l.Changed = C
