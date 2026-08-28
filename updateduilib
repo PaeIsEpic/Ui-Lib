@@ -7688,6 +7688,7 @@ local aa = {
 
             local initialTitle = d.Title
             local initialContent = d.Content
+            local initialInline = d.Inline == true
 
             local e = ac(ag.Element)(
                 initialTitle or "",
@@ -7699,16 +7700,55 @@ local aa = {
             e.Frame.BackgroundTransparency = 0.92
             e.Border.Transparency = 0.6
 
-            -- Keep track of the current Paragraph values.
             e.Title = initialTitle
             e.Content = initialContent or ""
+            e.Inline = initialInline
 
-            -- Preserve the original Element methods before overriding them.
             local _SetTitle = e.SetTitle
             local _SetDesc = e.SetDesc
+            local labelHolder = e.LabelHolder
+            local labelLayout = labelHolder and labelHolder:FindFirstChildWhichIsA("UIListLayout")
 
-            -- Paragraph-specific title setter.
-            -- SetTitle(nil) or SetTitle("") hides the title.
+            local function applyInline(inline)
+                e.Inline = inline == true
+
+                if not labelHolder then
+                    return
+                end
+
+                if e.Inline then
+                    if labelLayout then
+                        labelLayout.FillDirection = Enum.FillDirection.Horizontal
+                        labelLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                        labelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                        labelLayout.Padding = UDim.new(0, 4)
+                    end
+
+                    e.TitleLabel.AutomaticSize = Enum.AutomaticSize.X
+                    e.TitleLabel.Size = UDim2.new(0, 0, 0, 14)
+                    e.TitleLabel.TextWrapped = false
+
+                    e.DescLabel.AutomaticSize = Enum.AutomaticSize.X
+                    e.DescLabel.Size = UDim2.new(0, 0, 0, 14)
+                    e.DescLabel.TextWrapped = false
+                else
+                    if labelLayout then
+                        labelLayout.FillDirection = Enum.FillDirection.Vertical
+                        labelLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                        labelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                        labelLayout.Padding = UDim.new(0, 0)
+                    end
+
+                    e.TitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+                    e.TitleLabel.Size = UDim2.new(1, 0, 0, 14)
+                    e.TitleLabel.TextWrapped = true
+
+                    e.DescLabel.AutomaticSize = Enum.AutomaticSize.Y
+                    e.DescLabel.Size = UDim2.new(1, 0, 0, 14)
+                    e.DescLabel.TextWrapped = true
+                end
+            end
+
             function e:SetTitle(value)
                 e.Title = value
 
@@ -7721,19 +7761,20 @@ local aa = {
                 end
             end
 
-            -- Paragraph-specific content setter.
             function e:SetContent(value)
                 value = value == nil and "" or tostring(value)
                 e.Content = value
                 _SetDesc(e, value)
             end
 
-            -- Update both fields at once.
-            --
-            -- Examples:
-            -- paragraph:SetParagraph({Title = "New title", Content = "Hello"})
-            -- paragraph:SetParagraph({Title = false, Content = "Hello"}) -- hide title
-            -- paragraph:SetParagraph({Content = "Hello"}) -- keep current title
+            function e:SetInline(value)
+                applyInline(value)
+            end
+
+            function e:IsInline()
+                return e.Inline == true
+            end
+
             function e:SetParagraph(config)
                 if type(config) ~= "table" then
                     return
@@ -7750,18 +7791,20 @@ local aa = {
                 if config.Content ~= nil then
                     e:SetContent(config.Content)
                 end
+
+                if config.Inline ~= nil then
+                    applyInline(config.Inline)
+                end
             end
 
-            -- Alias with a shorter name.
             e.Set = e.SetParagraph
 
-            -- Apply the initial visibility/content through the new API.
             e:SetTitle(initialTitle)
             e:SetContent(initialContent)
+            applyInline(initialInline)
 
             return e
         end
-
         return aj
     end,
     [26] = function() --[[ Slider_El ]]
