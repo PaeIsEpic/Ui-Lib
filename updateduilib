@@ -4129,7 +4129,6 @@ local aa = {
             x.Container = x.ContainerFrame
             x.ScrollFrame = x.Container
             function x.AddSection(z, A, iconKey)
-                x._GroupboxActiveRow = nil
                 x._elementCount = (x._elementCount or 0) + 1
                 local _order = x._elementCount
                 local B, C = {Type = "Section"}, e(n.Section)(A, iconKey, x.Container)
@@ -4139,62 +4138,60 @@ local aa = {
                 setmetatable(B, v)
                 return B
             end
-            -- Classic two-column Groupbox API.
-            local function _ensureGroupboxRow(tab)
-                local row = tab._GroupboxActiveRow
-                if row and row.Parent then return row end
-                local rowIndex = (tab._groupboxRowCount or 0) + 1
-                tab._groupboxRowCount = rowIndex
-                local rowFrame = e("Frame", {
-                    Name = "GroupboxRow" .. rowIndex,
-                    Size = UDim2.new(1, 0, 0, 0),
-                    AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundTransparency = 1,
-                    LayoutOrder = (tab._elementCount or 0) + rowIndex,
-                    Parent = tab.Container,
-                }, {
-                    e("UIListLayout", {
-                        FillDirection = Enum.FillDirection.Horizontal,
-                        HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                        VerticalAlignment = Enum.VerticalAlignment.Top,
-                        Padding = UDim.new(0, 6),
-                    })
-                })
-                tab._GroupboxActiveRow = rowFrame
-                return rowFrame
-            end
+            -- Safe two-column groupbox helpers.
             local function _newGroupbox(tab, side, title, iconKey)
-                local row = _ensureGroupboxRow(tab)
-                local field = side == "Left" and "_LeftGroupbox" or "_RightGroupbox"
-                if row[field] and row[field].Parent then
-                    tab._GroupboxActiveRow = nil
-                    row = _ensureGroupboxRow(tab)
+                tab._GroupboxRows = tab._GroupboxRows or {}
+                local row = tab._GroupboxRows[#tab._GroupboxRows]
+                if not row or not row.Parent or row[side] then
+                    tab._elementCount = (tab._elementCount or 0) + 1
+                    row = j.New("Frame", {
+                        Name = "GroupboxRow" .. tostring(tab._elementCount),
+                        Size = UDim2.new(1, 0, 0, 0),
+                        AutomaticSize = Enum.AutomaticSize.Y,
+                        BackgroundTransparency = 1,
+                        LayoutOrder = tab._elementCount,
+                        Parent = tab.Container,
+                    }, {
+                        j.New("UIListLayout", {
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            Padding = UDim.new(0, 6),
+                            SortOrder = Enum.SortOrder.LayoutOrder,
+                        })
+                    })
+                    tab._GroupboxRows[#tab._GroupboxRows + 1] = row
                 end
-                local col = e("Frame", {
+
+                -- Create a normal Section and move its root into a half-width holder.
+                -- This preserves the library's existing control methods/behavior.
+                local sec = tab:AddSection(title, iconKey)
+                local root = sec.Container and sec.Container.Parent
+                if not root then return sec end
+
+                local holder = j.New("Frame", {
                     Name = side .. "Groupbox",
                     Size = UDim2.new(0.5, -3, 0, 0),
                     AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundTransparency = 1,
+                    BackgroundTransparency = 0.04,
+                    BorderSizePixel = 0,
+                    LayoutOrder = side == "Left" and 1 or 2,
                     Parent = row,
-                }, {
-                    e("UIListLayout", {Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder}),
+                    ThemeTag = {BackgroundColor3 = "Element"},
                 })
-                local sec = e(n.Section)(title or "Groupbox", iconKey, col)
-                local obj = {
-                    Type = "Groupbox",
-                    Container = sec.Container,
-                    ScrollFrame = tab.ScrollFrame or tab.Container,
-                    Frame = col,
-                    _elementCount = 0,
-                }
-                setmetatable(obj, v)
-                row[field] = col
-                return obj
+                j.New("UICorner", {CornerRadius = UDim.new(0, 8), Parent = holder})
+                j.New("UIStroke", {Thickness = 1, Transparency = 0.5, ThemeTag = {Color = "InElementBorder"}, Parent = holder})
+                root.Parent = holder
+                root.LayoutOrder = 1
+                return sec
             end
-            function x.AddLeftGroupbox(z, title, iconKey) return _newGroupbox(z, "Left", title, iconKey) end
-            function x.AddRightGroupbox(z, title, iconKey) return _newGroupbox(z, "Right", title, iconKey) end
+            function x.AddLeftGroupbox(z, title, iconKey)
+                return _newGroupbox(x, "Left", title, iconKey)
+            end
+            function x.AddRightGroupbox(z, title, iconKey)
+                return _newGroupbox(x, "Right", title, iconKey)
+            end
             x.LeftGroupbox = x.AddLeftGroupbox
             x.RightGroupbox = x.AddRightGroupbox
+
             function x.AddCollapsibleSection(z, A, iconKey, openState)
                 -- Accept the same calling convention as AddSection: (Title, Icon).
                 -- Also accept a config table for backward compatibility: { Title=, Icon=, Open= }.
@@ -4385,8 +4382,6 @@ local aa = {
             end
             x.Section = x.AddSection
             x.CollapsibleSection = x.AddCollapsibleSection
-            x.LeftGroupbox = x.AddLeftGroupbox
-            x.RightGroupbox = x.AddRightGroupbox
             setmetatable(x, v)
             return x
         end
@@ -5611,7 +5606,6 @@ local aa = {
                 end)
             end
             function v.Hide(M)
-                if e(k)._CloseAllDropdowns then e(k)._CloseAllDropdowns() end
                 v.Minimized = true
                 v.Root.Visible = false
                 pcall(function()
@@ -5621,7 +5615,6 @@ local aa = {
             end
             function v.Minimize(M)
                 v.Minimized = not v.Minimized
-                if v.Minimized and e(k)._CloseAllDropdowns then e(k)._CloseAllDropdowns() end
                 v.Root.Visible = not v.Minimized
                 pcall(function()
                     local ovs = e(k)._SBOverlays
@@ -6521,122 +6514,57 @@ local aa = {
         local c, d = ac(aj.Creator), ac(aj.Packages.Flipper)
         local e, f, g = c.New, aj.Components, {}
         local _RS_dd = game:GetService("RunService")
-
-        -- Dropdown shine uses ONE RenderStepped connection per open dropdown.
-        -- The previous implementation created one connection per UIGradient and
-        -- another per UIStroke, which scales badly when dropdowns are rebuilt.
         local function _clearDropShine(state)
-            if state and state._shineConn then
-                pcall(function() state._shineConn:Disconnect() end)
-                state._shineConn = nil
+            if state._shineConns then
+                for _, conn in ipairs(state._shineConns) do
+                    pcall(function() conn:Disconnect() end)
+                end
+                table.clear(state._shineConns)
             end
-            state._shineGradients = nil
-            state._shineStrokes = nil
         end
-
         local function _applyDropShine(state, root, elementAnimated)
             _clearDropShine(state)
-
-            if not elementAnimated or not root then
-                return
-            end
-
-            local shineCfg = c.GetThemeProperty("Shine")
-            if type(shineCfg) ~= "table" then
-                return
-            end
-
-            local gradients = {}
-            local strokes = {}
-
-            for _, obj in ipairs(root:GetDescendants()) do
+            state._shineConns = {}
+            if not elementAnimated then return end
+            local objs = root:GetDescendants()
+            for _, obj in ipairs(objs) do
                 if obj:IsA("UIGradient") then
-                    gradients[#gradients + 1] = obj
-                    if shineCfg.ColorSequence then
-                        obj.Color = shineCfg.ColorSequence
-                    end
-                elseif obj:IsA("UIStroke") then
-                    strokes[#strokes + 1] = obj
+                    local conn
+                    conn = _RS_dd.RenderStepped:Connect(function(dt)
+                        local shineCfg = c.GetThemeProperty("Shine")
+                        if not shineCfg then return end
+                        local Speed = shineCfg.Speed or 0.5
+                        local RotationSpeed = shineCfg.RotationSpeed or 25
+                        local ColorSeq = shineCfg.ColorSequence
+                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
+                        obj:SetAttribute("_t", t)
+                        obj.Rotation = (t * RotationSpeed) % 360
+                        obj.Offset = Vector2.new(math.sin(t * 0.6) * 0.18, obj.Offset.Y)
+                        if ColorSeq then obj.Color = ColorSeq end
+                    end)
+                    table.insert(state._shineConns, conn)
+                end
+                if obj:IsA("UIStroke") then
+                    local conn
+                    conn = _RS_dd.RenderStepped:Connect(function(dt)
+                        local shineCfg = c.GetThemeProperty("Shine")
+                        local Speed = (shineCfg and shineCfg.Speed) or 0.5
+                        local strokeDark = c.GetThemeProperty("StrokeDark") or c.GetThemeProperty("AcrylicBorder")
+                        local accent = c.GetThemeProperty("Accent")
+                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
+                        obj:SetAttribute("_t", t)
+                        if strokeDark and accent then
+                            local pulse = (math.sin(t) + 1) / 2
+                            obj.Thickness = 1.25 + pulse * 1.25
+                            obj.Color = strokeDark:Lerp(accent, pulse)
+                        end
+                    end)
+                    table.insert(state._shineConns, conn)
                 end
             end
-
-            if #gradients == 0 and #strokes == 0 then
-                return
-            end
-
-            state._shineGradients = gradients
-            state._shineStrokes = strokes
-            state._shineTime = 0
-
-            local speed = tonumber(shineCfg.Speed) or 0.5
-            local rotationSpeed = tonumber(shineCfg.RotationSpeed) or 25
-            local colorSequence = shineCfg.ColorSequence
-
-            state._shineConn = _RS_dd.RenderStepped:Connect(function(dt)
-                if not root.Parent or not root.Visible then
-                    return
-                end
-
-                state._shineTime += dt * speed
-                local current = state._shineTime
-
-                for idx = #gradients, 1, -1 do
-                    local gradient = gradients[idx]
-                    if not gradient or not gradient.Parent then
-                        table.remove(gradients, idx)
-                    else
-                        gradient.Rotation = (current * rotationSpeed) % 360
-                        gradient.Offset = Vector2.new(
-                            math.sin(current * 0.6) * 0.18,
-                            gradient.Offset.Y
-                        )
-                        -- Keep the theme ColorSequence stable; don't allocate a new
-                        -- ColorSequence assignment every render frame.
-                        if colorSequence and gradient.Color ~= colorSequence then
-                            gradient.Color = colorSequence
-                        end
-                    end
-                end
-
-                local strokeDark = c.GetThemeProperty("StrokeDark")
-                    or c.GetThemeProperty("AcrylicBorder")
-                local accent = c.GetThemeProperty("Accent")
-
-                if strokeDark and accent then
-                    local pulse = (math.sin(current) + 1) / 2
-                    local thickness = 1.25 + pulse * 1.25
-                    local strokeColor = strokeDark:Lerp(accent, pulse)
-
-                    for idx = #strokes, 1, -1 do
-                        local stroke = strokes[idx]
-                        if not stroke or not stroke.Parent then
-                            table.remove(strokes, idx)
-                        else
-                            stroke.Thickness = thickness
-                            stroke.Color = strokeColor
-                        end
-                    end
-                end
-
-                if #gradients == 0 and #strokes == 0 then
-                    _clearDropShine(state)
-                end
-            end)
         end
         g.__index = g
         g.__type = "Dropdown"
-        -- Shared registry of currently open dropdowns.
-        local _openDropdowns = setmetatable({}, {__mode = "k"})
-        local function _installDropdownCloser(lib)
-            if not lib or lib._CloseAllDropdowns then return end
-            function lib._CloseAllDropdowns()
-                for dropdown in next, _openDropdowns do
-                    if dropdown and dropdown.Opened then
-                        pcall(function() dropdown:Close() end)
-                    end
-                end
-            end
-        end
         -- Shared across all dropdown instances: tracks which side (left/right) of the window
         -- is currently occupied by an open OutsideWindow dropdown, so a second one opening
         -- at the same time automatically goes to the other side instead of overlapping.
@@ -6644,6 +6572,7 @@ local aa = {
         -- Shared registry of currently open dropdowns, so the global "Animated Window" toggle
         -- can immediately re-apply or clear shine on dropdowns that are already open, instead
         -- of waiting for the user to close and reopen them.
+        local _openDropdowns = setmetatable({}, {__mode = "k"})
         local function _registerShineRefresh(lib)
             if lib and not lib._RefreshOpenDropdownShine then
                 lib._RefreshOpenDropdownShine = function()
@@ -6669,7 +6598,6 @@ local aa = {
                 },
                 ac(f.Element)(j.Title, j.Description, h.Container, false)
             _registerShineRefresh(h.Library)
-            _installDropdownCloser(h.Library)
             m.DescLabel.Size = UDim2.new(1, -170, 0, 14)
             l.SetTitle = m.SetTitle
             l.SetDesc = m.SetDesc
@@ -6834,7 +6762,6 @@ local aa = {
                 {u, e("UISizeConstraint", {MinSize = Vector2.new(170, 0)})}
             )
             table.insert(k.OpenFrames, v)
-            v._DropdownOwner = l
             local function _winFrame()
                 local winGui = h.Library.GUI or h.Library.PopupGUI
                 return winGui and winGui:FindFirstChildWhichIsA("Frame", true)
@@ -6960,10 +6887,37 @@ local aa = {
             w()
             c.AddSignal(p:GetPropertyChangedSignal "AbsolutePosition", w)
             c.AddSignal(p:GetPropertyChangedSignal "AbsoluteSize", function() y() w() end)
+            -- OutsideWindow popups live in PopupGUI. Close them when the actual
+            -- window is hidden, otherwise the popup can visually remain behind.
+            pcall(function()
+                local windowRoot = h.Library and h.Library.Window and h.Library.Window.Root
+                if windowRoot then
+                    c.AddSignal(windowRoot:GetPropertyChangedSignal("Visible"), function()
+                        if not windowRoot.Visible and l.Opened then
+                            l:Close()
+                        end
+                    end)
+                end
+            end)
+            pcall(function()
+                local gui = h.Library and h.Library.GUI
+                if gui then
+                    c.AddSignal(gui.Destroying, function()
+                        if l.Opened then
+                            l:Close()
+                        end
+                    end)
+                end
+            end)
+
             c.AddSignal(
                 p.MouseButton1Click,
                 function()
-                    if l.Opened then l:Close() else l:Open() end
+                    if l.Opened then
+                        l:Close()
+                    else
+                        l:Open()
+                    end
                 end
             )
             c.AddSignal(
@@ -6974,9 +6928,6 @@ local aa = {
                         local B, C = u.AbsolutePosition, u.AbsoluteSize
                         local insideDropdown = ah.X >= B.X and ah.X <= B.X + C.X and ah.Y >= (B.Y - 20 - 1) and ah.Y <= B.Y + C.Y
                         if insideDropdown then return end
-                        local PB, PC = p.AbsolutePosition, p.AbsoluteSize
-                        local onDropdownButton = ah.X >= PB.X and ah.X <= PB.X + PC.X and ah.Y >= PB.Y and ah.Y <= PB.Y + PC.Y
-                        if onDropdownButton then return end
                         if j.OutsideWindow or j.DropdownOutsideWindow then
                             local winGui = h.Library.GUI or h.Library.PopupGUI
                             local winFrame = winGui and winGui:FindFirstChildWhichIsA("Frame", true)
@@ -7406,27 +7357,7 @@ local aa = {
             end
 
             function l.SetOptionImages(B, imageMap)
-                local newMap = type(imageMap) == "table" and imageMap or {}
-                local oldMap = l.OptionImages or {}
-                local same = true
-
-                local oldCount, newCount = 0, 0
-                for key, value in pairs(oldMap) do
-                    oldCount += 1
-                    if newMap[key] ~= value then same = false break end
-                end
-                if same then
-                    for key, value in pairs(newMap) do
-                        newCount += 1
-                        if oldMap[key] ~= value then same = false break end
-                    end
-                end
-
-                if same and oldCount == newCount then
-                    return
-                end
-
-                l.OptionImages = newMap
+                l.OptionImages = type(imageMap) == "table" and imageMap or {}
                 l:BuildDropdownList()
                 l:Display()
             end
@@ -7444,22 +7375,30 @@ local aa = {
             end
 
             function l.SetValues(B, C)
-                if C == nil then return end
+                if type(C) ~= "table" then
+                    return
+                end
+
+                -- Avoid rebuilding every option when a periodic refresh produces
+                -- the exact same list. This is intentionally a very small optimization
+                -- so the normal dropdown implementation remains untouched.
                 local oldValues = l.Values
-                local same = oldValues == C
-                if not same and type(oldValues) == "table" and type(C) == "table" and #oldValues == #C then
-                    same = true
-                    for idx = 1, #C do
-                        if oldValues[idx] ~= C[idx] then same = false break end
+                local changed = (type(oldValues) ~= "table") or (#oldValues ~= #C)
+                if not changed then
+                    for index = 1, #C do
+                        if oldValues[index] ~= C[index] then
+                            changed = true
+                            break
+                        end
                     end
                 end
-                if same then return end
+
+                if not changed then
+                    return
+                end
+
                 l.Values = C
                 l:BuildDropdownList()
-                if not l.Multi and l.Value ~= nil and not table.find(C, l.Value) then
-                    l.Value = nil
-                    l:Display()
-                end
             end
             function l.OnChanged(B, C)
                 l.Changed = C
@@ -7486,14 +7425,6 @@ local aa = {
                 k:SafeCallback(l.Changed, l.Value)
             end
             function l.Destroy(B)
-                _clearDropShine(l)
-                if l.Opened then
-                    l.Opened = false
-                    _openDropdowns[l] = nil
-                end
-                if l._outsideSide and _outsideSideOwner[l._outsideSide] == l then
-                    _outsideSideOwner[l._outsideSide] = nil
-                end
                 m:Destroy()
                 k.Options[i] = nil
             end
