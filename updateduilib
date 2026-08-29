@@ -6485,20 +6485,31 @@ local aa = {
         g.__type = "Dropdown"
 
         function g.New(h, i, j)
+            local idx, config
+            if type(i) == "table" then
+                config = i
+                idx = config.Idx or config.Title or nil
+            elseif type(i) == "string" then
+                idx = i
+                config = (type(j) == "table") and j or {}
+            else
+                config = (type(j) == "table") and j or {}
+            end
+
             local k = h.Library
-            local l = ac(f.Element)(j.Title, j.Description, h.Container, false)
+            local l = ac(f.Element)(config.Title or "Dropdown", config.Description, h.Container, false)
             l.DescLabel.Size = UDim2.new(1, -170, 0, 14)
 
             local m = {
-                Values       = j.Values or {},
-                Value        = j.Default,
-                Multi        = j.Multi or false,
-                AllowNull    = j.AllowNull or false,
+                Values       = config.Values or {},
+                Value        = config.Default,
+                Multi        = config.Multi or false,
+                AllowNull    = config.AllowNull or false,
                 Buttons      = {},
                 ButtonPool   = {},
                 Opened       = false,
                 Type         = "Dropdown",
-                Callback     = j.Callback or function() end,
+                Callback     = config.Callback or function() end,
                 SetTitle     = l.SetTitle,
                 SetDesc      = l.SetDesc,
                 Frame        = l.Frame,
@@ -6572,7 +6583,7 @@ local aa = {
                 }
             )
 
-            local showSearch = not (j.NoSearch == true or j.Search == false)
+            local showSearch = not (config.NoSearch == true or config.Search == false)
             local searchBox = showSearch and e(
                 "TextBox",
                 {
@@ -6615,8 +6626,8 @@ local aa = {
                 { r }
             )
 
-            local bgImage    = j.DropdownBackgroundImage or (k and k.DropdownBackgroundImage or "")
-            local bgTransp   = j.DropdownBackgroundTransparency
+            local bgImage    = config.DropdownBackgroundImage or (k and k.DropdownBackgroundImage or "")
+            local bgTransp   = config.DropdownBackgroundTransparency
             if bgTransp == nil then bgTransp = (k and k.DropdownBackgroundTransparency or 0.4) end
 
             local popupChildren = {
@@ -6681,25 +6692,44 @@ local aa = {
             end
 
             local function isOutside()
-                if j.DropdownOutsideWindow ~= nil then return j.DropdownOutsideWindow end
+                if config.DropdownOutsideWindow ~= nil then return config.DropdownOutsideWindow end
                 if k and k.DropdownsOutsideWindow then return true end
                 return false
             end
 
             local popupWidth = 170
 
+            local function getCalculatedDimensions()
+                local count = 0
+                for _, item in ipairs(m.ButtonPool) do
+                    if item.Button and item.Button.Visible then
+                        count = count + 1
+                    end
+                end
+                local minH = showSearch and 75 or 42
+                local computedH = (count * 35) + (showSearch and 42 or 14)
+                local totalH
+                if count > 10 then
+                    totalH = 392
+                else
+                    totalH = math.max(computedH, minH)
+                end
+                local canvasH = count * 35
+                return totalH, canvasH, count
+            end
+
             local function updatePos()
                 if not m.Opened then return end
                 if isOutside() then
-                    local winGui   = k and (k.GUI or k.PopupGUI)
-                    local winFrame = winGui and winGui:FindFirstChildWhichIsA("Frame", true)
+                    local winFrame = (k and k.Window and (k.Window.Root or k.Window.Frame))
+                        or (k and k.GUI and k.GUI:FindFirstChildWhichIsA("Frame", true))
                     local winRight = winFrame and (winFrame.AbsolutePosition.X + winFrame.AbsoluteSize.X)
                         or (p.AbsolutePosition.X + p.AbsoluteSize.X + 8)
-                    local popX     = winRight + 8
-                    local popY     = p.AbsolutePosition.Y + p.AbsoluteSize.Y / 2 - u.AbsoluteSize.Y / 2
-                    local maxY     = (ai and ai.ViewportSize.Y or 1000) - u.AbsoluteSize.Y - 8
-                    popY           = math.max(8, math.min(popY, maxY))
-                    u.Position     = UDim2.fromOffset(popX, popY)
+                    local popX = winRight + 8
+                    local popY = p.AbsolutePosition.Y + p.AbsoluteSize.Y / 2 - u.AbsoluteSize.Y / 2
+                    local maxY = (ai and ai.ViewportSize.Y or 1000) - u.AbsoluteSize.Y - 8
+                    popY = math.max(8, math.min(popY, maxY))
+                    u.Position = UDim2.fromOffset(popX, popY)
                 else
                     local popX = p.AbsolutePosition.X
                     local popY = p.AbsolutePosition.Y + p.AbsoluteSize.Y + 4
@@ -6714,25 +6744,15 @@ local aa = {
 
             local function updateSize()
                 if not m.Opened then return end
-                local minH = 42
-                local visibleCount = 0
-                for _, item in ipairs(m.ButtonPool) do
-                    if item.Button and item.Button.Visible then
-                        visibleCount = visibleCount + 1
-                    end
-                end
-
-                if visibleCount > 10 then
-                    u.Size = UDim2.fromOffset(popupWidth, 392)
-                else
-                    local contentH = r.AbsoluteContentSize.Y + (showSearch and 42 or 16)
-                    u.Size = UDim2.fromOffset(popupWidth, math.max(contentH, minH))
-                end
+                local totalH, canvasH = getCalculatedDimensions()
+                u.Size = UDim2.fromOffset(popupWidth, totalH)
+                s.CanvasSize = UDim2.fromOffset(0, canvasH)
             end
 
             local function updateCanvas()
                 if not m.Opened then return end
-                s.CanvasSize = UDim2.fromOffset(0, r.AbsoluteContentSize.Y)
+                local _, canvasH = getCalculatedDimensions()
+                s.CanvasSize = UDim2.fromOffset(0, canvasH)
             end
 
             table.insert(m._connections, c.AddSignal(p:GetPropertyChangedSignal("AbsolutePosition"), function()
@@ -6744,13 +6764,19 @@ local aa = {
                     updateSize()
                 end
             end))
+            table.insert(m._connections, c.AddSignal(r:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+                if m.Opened then
+                    updateCanvas()
+                    updateSize()
+                end
+            end))
 
             local function isPointInside(absPos, absSize, pt)
                 return pt.X >= absPos.X and pt.X <= (absPos.X + absSize.X)
                     and pt.Y >= absPos.Y and pt.Y <= (absPos.Y + absSize.Y)
             end
 
-            -- Click listener: ignores toggle button so it can toggle cleanly
+            -- Outside click listener: ignores clicks on toggle button or popup
             table.insert(m._connections, c.AddSignal(ag.InputBegan, function(inp)
                 if not m.Opened then return end
                 if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
@@ -6765,7 +6791,7 @@ local aa = {
                 end
             end))
 
-            -- Main toggle button listener
+            -- Toggle button listener
             table.insert(m._connections, c.AddSignal(p.MouseButton1Click, function()
                 m:Toggle()
             end))
@@ -6959,7 +6985,7 @@ local aa = {
 
                     if m.Multi then
                         m.Value[currentVal] = not m.Value[currentVal]
-                        selBar.Visible = m.Value[currentVal] == true
+                        selBar.Visible = (m.Value[currentVal] == true)
                     else
                         for _, otherItem in ipairs(m.ButtonPool) do
                             if otherItem.SelBar then otherItem.SelBar.Visible = false end
@@ -7106,16 +7132,16 @@ local aa = {
                 if u then
                     pcall(function() u:Destroy() end)
                 end
-                if k and k.Options and i then
-                    k.Options[i] = nil
+                if k and k.Options and idx then
+                    k.Options[idx] = nil
                 end
             end
 
             m:BuildList()
             m:Display()
 
-            if k and k.Options and i then
-                k.Options[i] = m
+            if k and k.Options and idx then
+                k.Options[idx] = m
             end
 
             return m
