@@ -136,10 +136,7 @@ do
             end
         end
         if #_gradients == 0 and #_strokes == 0 then return end
-        local frameCounter = 0
         st.conn = _RunService.RenderStepped:Connect(function(dt)
-            frameCounter = frameCounter + 1
-            if frameCounter % 2 == 0 then return end -- skip every other frame
             for i = #_gradients, 1, -1 do
                 local obj = _gradients[i]
                 if obj.Parent then
@@ -420,41 +417,30 @@ local aa = {
                     return
                 end
                 pcall(function() parent.ClipsDescendants = true end)
-                label.TextTruncate     = Enum.TextTruncate.None
-                local scrollDist       = fullW - avail + 12
-                local speed, pause     = 44, 1.8
-                local baseY            = label.Position.Y
-                local baseXS           = label.Position.X.Scale
-                label.Position         = UDim2.new(baseXS, 0, baseY.Scale, baseY.Offset)
-                local phase, timer     = 0, 0
-                local updateCounter    = 0 -- throttle
+                label.TextTruncate = Enum.TextTruncate.None
+                local scrollDist = fullW - avail + 12
+                local speed, pause = 44, 1.8
+                local baseY  = label.Position.Y
+                local baseXS = label.Position.X.Scale
+                label.Position = UDim2.new(baseXS, 0, baseY.Scale, baseY.Offset)
+                local phase, timer = 0, 0
                 local conn
-                conn                   = game:GetService("RunService").Heartbeat:Connect(function(dt)
-                    updateCounter = updateCounter + 1
-                    if updateCounter % 2 ~= 0 then return end -- update every 2nd frame
+                conn = game:GetService("RunService").Heartbeat:Connect(function(dt)
                     if not label or not label.Parent then
                         conn:Disconnect(); _marqueeConns[animKey] = nil; return
                     end
                     if phase == 0 then
-                        timer += dt; if timer >= pause then
-                            timer = 0; phase = 1
-                        end
+                        timer += dt; if timer >= pause then timer = 0; phase = 1 end
                     elseif phase == 1 then
                         local nxt = math.max(label.Position.X.Offset - speed * dt, -scrollDist)
                         label.Position = UDim2.new(baseXS, nxt, baseY.Scale, baseY.Offset)
-                        if nxt <= -scrollDist then
-                            phase = 2; timer = 0
-                        end
+                        if nxt <= -scrollDist then phase = 2; timer = 0 end
                     elseif phase == 2 then
-                        timer += dt; if timer >= pause then
-                            timer = 0; phase = 3
-                        end
+                        timer += dt; if timer >= pause then timer = 0; phase = 3 end
                     else
                         local nxt = math.min(label.Position.X.Offset + speed * dt, 0)
                         label.Position = UDim2.new(baseXS, nxt, baseY.Scale, baseY.Offset)
-                        if nxt >= 0 then
-                            phase = 0; timer = 0
-                        end
+                        if nxt >= 0 then phase = 0; timer = 0 end
                     end
                 end)
                 _marqueeConns[animKey] = conn
@@ -6724,11 +6710,7 @@ local aa = {
             table.insert(k.OpenFrames, v)
             local function _winFrame()
                 local winGui = h.Library.GUI or h.Library.PopupGUI
-                local frame = winGui and winGui:FindFirstChildWhichIsA("Frame", true)
-                if not frame and h.Library.Window then
-                    frame = h.Library.Window.Root
-                end
-                return frame
+                return winGui and winGui:FindFirstChildWhichIsA("Frame", true)
             end
             local w, x = function()
                     if j.OutsideWindow or j.DropdownOutsideWindow then
@@ -6862,18 +6844,15 @@ local aa = {
                 function(A)
                     if not l.Opened then return end
                     if A.UserInputType == Enum.UserInputType.MouseButton1 or A.UserInputType == Enum.UserInputType.Touch then
-                        if A.Target and A.Target:IsDescendantOf(p) then return end
                         local B, C = u.AbsolutePosition, u.AbsoluteSize
-                        local insideDropdown = ah.X >= B.X and ah.X <= B.X + C.X and ah.Y >= (B.Y - 20 - 1) and
-                        ah.Y <= B.Y + C.Y
+                        local insideDropdown = ah.X >= B.X and ah.X <= B.X + C.X and ah.Y >= (B.Y - 20 - 1) and ah.Y <= B.Y + C.Y
                         if insideDropdown then return end
                         if j.OutsideWindow or j.DropdownOutsideWindow then
                             local winGui = h.Library.GUI or h.Library.PopupGUI
                             local winFrame = winGui and winGui:FindFirstChildWhichIsA("Frame", true)
                             if winFrame then
                                 local wp, ws = winFrame.AbsolutePosition, winFrame.AbsoluteSize
-                                local insideWindow = ah.X >= wp.X and ah.X <= wp.X + ws.X and ah.Y >= wp.Y and
-                                ah.Y <= wp.Y + ws.Y
+                                local insideWindow = ah.X >= wp.X and ah.X <= wp.X + ws.X and ah.Y >= wp.Y and ah.Y <= wp.Y + ws.Y
                                 if insideWindow then return end
                             end
                         end
@@ -7315,19 +7294,9 @@ local aa = {
             end
 
             function l.SetValues(B, C)
-                if type(C) ~= "table" then return end
-                local oldValues = l.Values
-                if type(oldValues) == "table" and #oldValues == #C then
-                    local same = true
-                    for i = 1, #C do
-                        if oldValues[i] ~= C[i] then
-                            same = false
-                            break
-                        end
-                    end
-                    if same then return end
+                if C then
+                    l.Values = C
                 end
-                l.Values = C
                 l:BuildDropdownList()
             end
             function l.OnChanged(B, C)
