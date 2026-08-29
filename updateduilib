@@ -1638,6 +1638,7 @@ local aa = {
         z.ProgressBar = z["AddProgressBar"]
         function x.CreateWindow(C, D)
             assert(D.Title, "Window - Missing Title")
+            D.Size = D.Size or UDim2.fromOffset(760, 560)
             if x.Window then
                 print "You cannot create more than one window."
                 return
@@ -4138,6 +4139,167 @@ local aa = {
                 setmetatable(B, v)
                 return B
             end
+            -- Obsidian-style left/right groupboxes.
+            -- Each groupbox owns its own bordered container and control list.
+            local function _getGroupboxRow(tab, side)
+                tab._GroupboxRows = tab._GroupboxRows or {}
+                local row = tab._GroupboxRows[#tab._GroupboxRows]
+
+                if not row or not row.Parent or row[side] then
+                    tab._elementCount = (tab._elementCount or 0) + 1
+                    row = j.New("Frame", {
+                        Name = "GroupboxRow_" .. tostring(tab._elementCount),
+                        Size = UDim2.new(1, 0, 0, 0),
+                        AutomaticSize = Enum.AutomaticSize.Y,
+                        BackgroundTransparency = 1,
+                        BorderSizePixel = 0,
+                        LayoutOrder = tab._elementCount,
+                        Parent = tab.Container,
+                    })
+
+                    j.New("UIListLayout", {
+                        FillDirection = Enum.FillDirection.Horizontal,
+                        HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                        VerticalAlignment = Enum.VerticalAlignment.Top,
+                        Padding = UDim.new(0, 6),
+                        SortOrder = Enum.SortOrder.LayoutOrder,
+                        Parent = row,
+                    })
+
+                    tab._GroupboxRows[#tab._GroupboxRows + 1] = row
+                end
+
+                return row
+            end
+
+            local function _newGroupbox(tab, side, title, iconKey)
+                local row = _getGroupboxRow(tab, side)
+                local parent = row
+                local holder = j.New("Frame", {
+                    Name = side .. "Groupbox",
+                    Size = UDim2.new(0.5, -3, 0, 0),
+                    AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 0.04,
+                    BorderSizePixel = 0,
+                    LayoutOrder = side == "Left" and 1 or 2,
+                    Parent = parent,
+                    ThemeTag = {BackgroundColor3 = "Element"},
+                })
+                j.New("UICorner", {CornerRadius = UDim.new(0, 8), Parent = holder})
+                j.New("UIStroke", {
+                    Thickness = 1,
+                    Transparency = 0.5,
+                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+                    ThemeTag = {Color = "InElementBorder"},
+                    Parent = holder,
+                })
+                j.New("UIPadding", {
+                    PaddingTop = UDim.new(0, 8),
+                    PaddingBottom = UDim.new(0, 8),
+                    PaddingLeft = UDim.new(0, 8),
+                    PaddingRight = UDim.new(0, 8),
+                    Parent = holder,
+                })
+
+                local header = j.New("Frame", {
+                    Name = "Header",
+                    Size = UDim2.new(1, 0, 0, 24),
+                    BackgroundTransparency = 1,
+                    Parent = holder,
+                })
+
+                local titleOffset = 0
+                if iconKey then
+                    local ico = j.New("ImageLabel", {
+                        Name = "Icon",
+                        Size = UDim2.fromOffset(15, 15),
+                        Position = UDim2.fromOffset(0, 4),
+                        BackgroundTransparency = 1,
+                        ImageTransparency = 0.15,
+                        ThemeTag = {ImageColor3 = "Text"},
+                        Parent = header,
+                    })
+                    titleOffset = 21
+                    task.defer(function()
+                        local lib = tab.Library or e(aj)
+                        local ic = lib and lib.GetIcon and lib:GetIcon(iconKey)
+                        if ic then
+                            if type(ic) == "table" then
+                                ico.Image = ic.Image or ""
+                                ico.ImageRectOffset = ic.ImageRectOffset or Vector2.new()
+                                ico.ImageRectSize = ic.ImageRectSize or Vector2.new()
+                            else
+                                ico.Image = tostring(ic)
+                            end
+                        end
+                    end)
+                end
+
+                j.New("TextLabel", {
+                    Name = "Title",
+                    Size = UDim2.new(1, -titleOffset, 1, 0),
+                    Position = UDim2.fromOffset(titleOffset, 0),
+                    BackgroundTransparency = 1,
+                    Text = tostring(title or "Groupbox"),
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextYAlignment = Enum.TextYAlignment.Center,
+                    FontFace = Font.new("rbxassetid://12187365364", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
+                    TextSize = 14,
+                    ThemeTag = {TextColor3 = "Text"},
+                    Parent = header,
+                })
+
+                local container = j.New("Frame", {
+                    Name = "Container",
+                    Size = UDim2.new(1, 0, 0, 0),
+                    AutomaticSize = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1,
+                    Parent = holder,
+                })
+                j.New("UIListLayout", {
+                    Padding = UDim.new(0, 5),
+                    SortOrder = Enum.SortOrder.LayoutOrder,
+                    Parent = container,
+                })
+
+                local obj = {
+                    Type = "Groupbox",
+                    Container = container,
+                    ScrollFrame = tab.ScrollFrame or tab.Container,
+                    Frame = holder,
+                    Header = header,
+                    TitleLabel = header:FindFirstChild("Title"),
+                    _elementCount = 0,
+                    _GroupboxSide = side,
+                }
+
+                -- Keep groupbox height synchronized with its control contents.
+                local layout = container:FindFirstChildWhichIsA("UIListLayout")
+                if layout then
+                    j.AddSignal(layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+                        container.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y)
+                    end)
+                end
+
+                row[side] = holder
+                setmetatable(obj, z)
+                return obj
+            end
+
+            function x.AddLeftGroupbox(z, title, iconKey)
+                return _newGroupbox(z, "Left", title, iconKey)
+            end
+
+            function x.AddRightGroupbox(z, title, iconKey)
+                return _newGroupbox(z, "Right", title, iconKey)
+            end
+
+            x.LeftGroupbox = x.AddLeftGroupbox
+            x.RightGroupbox = x.AddRightGroupbox
+            x.AddLeftGroupBox = x.AddLeftGroupbox
+            x.AddRightGroupBox = x.AddRightGroupbox
+
+
             function x.AddCollapsibleSection(z, A, iconKey, openState)
                 -- Accept the same calling convention as AddSection: (Title, Icon).
                 -- Also accept a config table for backward compatibility: { Title=, Icon=, Open= }.
@@ -6460,713 +6622,956 @@ local aa = {
         local c, d = ac(aj.Creator), ac(aj.Packages.Flipper)
         local e, f, g = c.New, aj.Components, {}
         local _RS_dd = game:GetService("RunService")
-
         local function _clearDropShine(state)
-            if state and state._shineConns then
+            if state._shineConns then
                 for _, conn in ipairs(state._shineConns) do
                     pcall(function() conn:Disconnect() end)
                 end
                 table.clear(state._shineConns)
             end
         end
-
-        local function arraysEqual(a, b)
-            if a == b then return true end
-            if type(a) ~= "table" or type(b) ~= "table" then return false end
-            local lenA, lenB = #a, #b
-            if lenA ~= lenB then return false end
-            for i = 1, lenA do
-                if a[i] ~= b[i] then return false end
+        local function _applyDropShine(state, root, elementAnimated)
+            _clearDropShine(state)
+            state._shineConns = {}
+            if not elementAnimated then return end
+            local objs = root:GetDescendants()
+            for _, obj in ipairs(objs) do
+                if obj:IsA("UIGradient") then
+                    local conn
+                    conn = _RS_dd.RenderStepped:Connect(function(dt)
+                        local shineCfg = c.GetThemeProperty("Shine")
+                        if not shineCfg then return end
+                        local Speed = shineCfg.Speed or 0.5
+                        local RotationSpeed = shineCfg.RotationSpeed or 25
+                        local ColorSeq = shineCfg.ColorSequence
+                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
+                        obj:SetAttribute("_t", t)
+                        obj.Rotation = (t * RotationSpeed) % 360
+                        obj.Offset = Vector2.new(math.sin(t * 0.6) * 0.18, obj.Offset.Y)
+                        if ColorSeq then obj.Color = ColorSeq end
+                    end)
+                    table.insert(state._shineConns, conn)
+                end
+                if obj:IsA("UIStroke") then
+                    local conn
+                    conn = _RS_dd.RenderStepped:Connect(function(dt)
+                        local shineCfg = c.GetThemeProperty("Shine")
+                        local Speed = (shineCfg and shineCfg.Speed) or 0.5
+                        local strokeDark = c.GetThemeProperty("StrokeDark") or c.GetThemeProperty("AcrylicBorder")
+                        local accent = c.GetThemeProperty("Accent")
+                        local t = (obj:GetAttribute("_t") or 0) + dt * Speed
+                        obj:SetAttribute("_t", t)
+                        if strokeDark and accent then
+                            local pulse = (math.sin(t) + 1) / 2
+                            obj.Thickness = 1.25 + pulse * 1.25
+                            obj.Color = strokeDark:Lerp(accent, pulse)
+                        end
+                    end)
+                    table.insert(state._shineConns, conn)
+                end
             end
-            return true
         end
-
         g.__index = g
         g.__type = "Dropdown"
-
-        function g.New(h, i, j)
-            local idx, config
-            if type(i) == "table" then
-                config = i
-                idx = config.Idx or config.Title or nil
-            elseif type(i) == "string" then
-                idx = i
-                config = (type(j) == "table") and j or {}
-            else
-                config = (type(j) == "table") and j or {}
-            end
-
-            local k = h.Library
-            local l = ac(f.Element)(config.Title or "Dropdown", config.Description, h.Container, false)
-            l.DescLabel.Size = UDim2.new(1, -170, 0, 14)
-
-            local m = {
-                Values       = config.Values or {},
-                Value        = config.Default,
-                Multi        = config.Multi or false,
-                AllowNull    = config.AllowNull or false,
-                Buttons      = {},
-                ButtonPool   = {},
-                Opened       = false,
-                Type         = "Dropdown",
-                Callback     = config.Callback or function() end,
-                SetTitle     = l.SetTitle,
-                SetDesc      = l.SetDesc,
-                Frame        = l.Frame,
-                _connections = {},
-                _shineConns  = {},
-            }
-
-            local function safeConnect(signal, callback)
-                if not signal then return nil end
-                local conn
-                if c and c.AddSignal then
-                    pcall(function() conn = c.AddSignal(signal, callback) end)
-                end
-                if not conn then
-                    pcall(function() conn = signal:Connect(callback) end)
-                end
-                if conn then
-                    table.insert(m._connections, conn)
-                end
-                return conn
-            end
-
-            if m.Multi then
-                if type(m.Value) ~= "table" then
-                    if m.Value ~= nil then
-                        m.Value = { [tostring(m.Value)] = true }
-                    else
-                        m.Value = {}
+        -- Shared across all dropdown instances: tracks which side (left/right) of the window
+        -- is currently occupied by an open OutsideWindow dropdown, so a second one opening
+        -- at the same time automatically goes to the other side instead of overlapping.
+        local _outsideSideOwner = {left = nil, right = nil, top = nil, bottom = nil}
+        -- Shared registry of currently open dropdowns, so the global "Animated Window" toggle
+        -- can immediately re-apply or clear shine on dropdowns that are already open, instead
+        -- of waiting for the user to close and reopen them.
+        local _openDropdowns = setmetatable({}, {__mode = "k"})
+        local function _registerShineRefresh(lib)
+            if lib and not lib._RefreshOpenDropdownShine then
+                lib._RefreshOpenDropdownShine = function()
+                    for state in next, _openDropdowns do
+                        if state._refreshShine then state._refreshShine() end
                     end
                 end
-            elseif type(m.Value) == "number" and m.Values[m.Value] ~= nil then
-                m.Value = m.Values[m.Value]
             end
-
-            local n = e(
-                "TextLabel",
+        end
+        function g.New(h, i, j)
+            local k, l, m =
+                h.Library,
                 {
-                    FontFace = Font.new "rbxasset://fonts/families/GothamSSm.json",
-                    Text = "--",
-                    TextSize = 13,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    Size = UDim2.new(1, -30, 0, 14),
-                    Position = UDim2.new(0, 8, 0.5, 0),
-                    AnchorPoint = Vector2.new(0, 0.5),
-                    BackgroundTransparency = 1,
-                    TextTruncate = Enum.TextTruncate.AtEnd,
-                    ThemeTag = { TextColor3 = "Text" }
-                }
-            )
-
-            local o = e(
-                "ImageLabel",
-                {
-                    Image = "rbxassetid://10709790948",
-                    Size = UDim2.fromOffset(16, 16),
-                    AnchorPoint = Vector2.new(1, 0.5),
-                    Position = UDim2.new(1, -8, 0.5, 0),
-                    BackgroundTransparency = 1,
-                    ThemeTag = { ImageColor3 = "SubText" }
-                }
-            )
-
-            local p = e(
-                "TextButton",
-                {
-                    Size = UDim2.fromOffset(160, 30),
-                    Position = UDim2.new(1, -10, 0.5, 0),
-                    AnchorPoint = Vector2.new(1, 0.5),
-                    BackgroundTransparency = 0.9,
-                    Parent = l.Frame,
-                    Text = "",
-                    ThemeTag = { BackgroundColor3 = "DropdownFrame" }
+                    Values = j.Values,
+                    Value = j.Default,
+                    Multi = j.Multi,
+                    Buttons = {},
+                    OptionImages = j.OptionImages or j.Images or {},
+                    Opened = false,
+                    Type = "Dropdown",
+                    Callback = j.Callback or function()
+                        end
                 },
-                {
-                    e("UICorner", { CornerRadius = UDim.new(0, 5) }),
-                    e(
-                        "UIStroke",
-                        {
-                            Transparency = 0.5,
-                            ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-                            ThemeTag = { Color = "InElementBorder" }
-                        }
-                    ),
-                    o,
-                    n
-                }
-            )
-
-            local showSearch = not (config.NoSearch == true or config.Search == false)
-            local searchBox = nil
-            if showSearch then
-                searchBox = e(
-                    "TextBox",
+                ac(f.Element)(j.Title, j.Description, h.Container, false)
+            _registerShineRefresh(h.Library)
+            m.DescLabel.Size = UDim2.new(1, -170, 0, 14)
+            l.SetTitle = m.SetTitle
+            l.SetDesc = m.SetDesc
+            l.Frame = m.Frame
+            local n, o =
+                e(
+                    "TextLabel",
                     {
-                        FontFace = Font.new "rbxasset://fonts/families/GothamSSm.json",
-                        TextSize = 11,
+                        FontFace = Font.new(
+                            "rbxasset://fonts/families/GothamSSm.json",
+                            Enum.FontWeight.Regular,
+                            Enum.FontStyle.Normal
+                        ),
+                        Text = "Value",
+                        TextColor3 = Color3.fromRGB(240, 240, 240),
+                        TextSize = 13,
                         TextXAlignment = Enum.TextXAlignment.Left,
-                        BackgroundTransparency = 0.7,
-                        BorderSizePixel = 0,
-                        Size = UDim2.new(1, -10, 0, 24),
-                        Position = UDim2.fromOffset(5, 5),
-                        PlaceholderText = "Search options...",
-                        ClearTextOnFocus = false,
-                        Text = "",
-                        ThemeTag = { TextColor3 = "Text", BackgroundColor3 = "Input", PlaceholderColor3 = "SubText" }
+                        Size = UDim2.new(1, -30, 0, 14),
+                        Position = UDim2.new(0, 8, 0.5, 0),
+                        AnchorPoint = Vector2.new(0, 0.5),
+                        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                        BackgroundTransparency = 1,
+                        TextTruncate = Enum.TextTruncate.AtEnd,
+                        ThemeTag = {TextColor3 = "Text"}
+                    }
+                ),
+                e(
+                    "ImageLabel",
+                    {
+                        Image = "rbxassetid://10709790948",
+                        Size = UDim2.fromOffset(16, 16),
+                        AnchorPoint = Vector2.new(1, 0.5),
+                        Position = UDim2.new(1, -8, 0.5, 0),
+                        BackgroundTransparency = 1,
+                        ThemeTag = {ImageColor3 = "SubText"}
                     }
                 )
-                e("UICorner", { CornerRadius = UDim.new(0, 4), Parent = searchBox })
-            end
+            local p, s =
+                e(
+                    "TextButton",
+                    {
+                        Size = UDim2.fromOffset(160, 30),
+                        Position = UDim2.new(1, -10, 0.5, 0),
+                        AnchorPoint = Vector2.new(1, 0.5),
+                        BackgroundTransparency = 0.9,
+                        Parent = m.Frame,
+                        ThemeTag = {BackgroundColor3 = "DropdownFrame"}
+                    },
+                    {
+                        e("UICorner", {CornerRadius = UDim.new(0, 5)}),
+                        e(
+                            "UIStroke",
+                            {
+                                Transparency = 0.5,
+                                ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+                                ThemeTag = {Color = "InElementBorder"}
+                            }
+                        ),
+                        o,
+                        n
+                    }
+                ),
+                e("UIListLayout", {Padding = UDim.new(0, 3)})
 
-            local scrollOffY = showSearch and 33 or 5
-            local scrollH    = showSearch and -38 or -10
-            local r          = e("UIListLayout", { Padding = UDim.new(0, 3) })
-            local s          = e(
+            local ddShowSearch = not (j.NoSearch == true or j.Search == false)
+            local ddSearchBox = ddShowSearch and e("TextBox", {
+                FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json"),
+                TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
+                BackgroundTransparency = 0.7, BorderSizePixel = 0,
+                Size = UDim2.new(1, -10, 0, 24), Position = UDim2.fromOffset(5, 5),
+                PlaceholderText = "Search options...", ClearTextOnFocus = false, Text = "",
+                ThemeTag = {TextColor3 = "Text", BackgroundColor3 = "Input", PlaceholderColor3 = "SubText"},
+            }) or nil
+            if ddSearchBox then
+                e("UICorner", {CornerRadius = UDim.new(0, 4)}).Parent = ddSearchBox
+            end
+            local scrollOffY = ddShowSearch and 33 or 5
+            local scrollH    = ddShowSearch and -38 or -10
+            local t =
+                e(
                 "ScrollingFrame",
                 {
                     Size = UDim2.new(1, -5, 1, scrollH),
                     Position = UDim2.fromOffset(5, scrollOffY),
                     BackgroundTransparency = 1,
-                    BottomImage = "rbxassetid://6889812791",
-                    MidImage = "rbxassetid://6889812721",
-                    TopImage = "rbxassetid://6276641225",
-                    ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255),
-                    ScrollBarImageTransparency = 0.95,
-                    ScrollBarThickness = 4,
+                    ScrollBarImageTransparency = 1,
+                    ScrollBarThickness = 0,
+                    VerticalScrollBarInset = Enum.ScrollBarInset.None,
+                    TopImage = "", MidImage = "", BottomImage = "",
+                    ElasticBehavior = Enum.ElasticBehavior.Never,
                     BorderSizePixel = 0,
+                    ClipsDescendants = true,
                     CanvasSize = UDim2.fromScale(0, 0)
                 },
-                { r }
+                {s}
             )
-
-            local bgImage    = config.DropdownBackgroundImage or (k and k.DropdownBackgroundImage or "")
-            local bgTransp   = config.DropdownBackgroundTransparency
-            if bgTransp == nil then bgTransp = (k and k.DropdownBackgroundTransparency or 0.4) end
-
-            local popupChildren = {
-                s,
-                e("UICorner", { CornerRadius = UDim.new(0, 7) }),
-                e("UIStroke", { ApplyStrokeMode = Enum.ApplyStrokeMode.Border, ThemeTag = { Color = "DropdownBorder" } }),
-            }
-
-            if bgImage ~= "" then
-                local customBg = e("ImageLabel", {
-                    BackgroundTransparency = 1,
-                    Image = bgImage,
-                    ScaleType = Enum.ScaleType.Stretch,
-                    Size = UDim2.fromScale(1, 1),
-                    ImageTransparency = bgTransp,
-                    ZIndex = 0,
-                })
-                if customBg then table.insert(popupChildren, customBg) end
+            local _ddBgImgRaw = j.DropdownBackgroundImages or j.DropdownBackgroundImage
+            local _ddBgImg = ""
+            if type(_ddBgImgRaw) == "string" then
+                if _ddBgImgRaw:match("^rbxassetid://") or _ddBgImgRaw:match("^rbxasset://") or _ddBgImgRaw:match("^http") then
+                    _ddBgImg = _ddBgImgRaw
+                elseif _ddBgImgRaw:match("^%d+$") then
+                    _ddBgImg = "rbxassetid://" .. _ddBgImgRaw
+                end
+            end
+            local _ddBgTransp= j.DropdownBackgroundTransparency
+            if _ddBgTransp == nil then _ddBgTransp = 0.4 end
+            local _ddBgChild
+            if _ddBgImg ~= "" then
+                _ddBgChild = e("ImageLabel",{BackgroundTransparency=1,Image=_ddBgImg,ScaleType=Enum.ScaleType.Stretch,Size=UDim2.fromScale(1,1),ImageTransparency=_ddBgTransp,ZIndex=0})
             else
-                local defaultShadow = e("ImageLabel", {
-                    BackgroundTransparency = 1,
-                    Image = "http://www.roblox.com/asset/?id=5554236805",
-                    ScaleType = Enum.ScaleType.Slice,
-                    SliceCenter = Rect.new(23, 23, 277, 277),
-                    Size = UDim2.fromScale(1, 1) + UDim2.fromOffset(30, 30),
-                    Position = UDim2.fromOffset(-15, -15),
-                    ImageColor3 = Color3.fromRGB(0, 0, 0),
-                    ImageTransparency = 0.1,
+                _ddBgChild = e("ImageLabel",{BackgroundTransparency=1,Image="http://www.roblox.com/asset/?id=5554236805",ScaleType=Enum.ScaleType.Slice,SliceCenter=Rect.new(23,23,277,277),Size=UDim2.fromScale(1,1)+UDim2.fromOffset(30,30),Position=UDim2.fromOffset(-15,-15),ImageColor3=Color3.fromRGB(0,0,0),ImageTransparency=0.1,Visible=false})
+            end
+            local _ddBorderThickness = tonumber(c.GetThemeProperty("DropdownBorderThickness")) or 1
+            local ddStroke = e("UIStroke", {ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Thickness = _ddBorderThickness, ThemeTag = {Color = "DropdownBorder"}})
+            local ddGradient = e("Frame", {
+                BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                BackgroundTransparency = 0.4,
+                Size = UDim2.fromScale(1, 1),
+                ZIndex = 0,
+                Visible = false,
+            }, {
+                e("UICorner", {CornerRadius = UDim.new(0, 7)}),
+                e("UIGradient", {Rotation = 90, ThemeTag = {Color = "AcrylicGradient"}}),
+            })
+            -- Same background, color, border and animated treatment regardless of OutsideWindow.
+            -- OutsideWindow only changes WHERE the dropdown is placed, never how it looks.
+            local uChildren = {t, e("UICorner", {CornerRadius = UDim.new(0, 7)}),
+                ddStroke,
+                ddGradient,
+                _ddBgChild
+            }
+            if ddSearchBox then table.insert(uChildren, 1, ddSearchBox) end
+            local u = e("Frame", {Size = UDim2.fromScale(1, 0.6), ThemeTag = {BackgroundColor3 = "DropdownHolder"}}, uChildren)
+            local _isManagerDD = j.IsManagerDropdown == true
+            if _isManagerDD then
+                -- Manager-built dropdowns (theme list, font list, config list, layouts list) mirror
+                -- the window's own Transparency setting live, instead of having independent transparency.
+                local function _syncManagerTransparency()
+                    local baseTransp = c.GetThemeProperty("DropdownTransparency") or 0
+                    u.BackgroundTransparency = h.Library.WindowTransparent and math.max(baseTransp, 0.35) or baseTransp
+                end
+                _syncManagerTransparency()
+                h.Library._ManagerDropdownSyncs = h.Library._ManagerDropdownSyncs or {}
+                table.insert(h.Library._ManagerDropdownSyncs, _syncManagerTransparency)
+            end
+            local _isOutsideDD = (j.OutsideWindow or j.DropdownOutsideWindow) == true
+            local _isManagerDDAnim = j.IsManagerDropdown == true
+            local _themeSupportsShineInit = c.GetThemeProperty("ShineEnabled") == true
+            local _initialAnimated = _themeSupportsShineInit and (
+                (_isManagerDDAnim and (h.Library.ShineEnabled == true)) or (j.Animated == true)
+            )
+            if _initialAnimated then
+                ddGradient.Visible = true
+                local acrylicBorder = c.GetThemeProperty("AcrylicBorder")
+                if acrylicBorder then ddStroke.Color = acrylicBorder end
+            end
+            local v =
+                e(
+                "Frame",
+                {BackgroundTransparency = 1, Size = UDim2.fromOffset(170, 300), Parent = h.Library.PopupGUI or h.Library.GUI, Visible = false},
+                {u, e("UISizeConstraint", {MinSize = Vector2.new(170, 0)})}
+            )
+            table.insert(k.OpenFrames, v)
+            local function _winFrame()
+                local winGui = h.Library.GUI or h.Library.PopupGUI
+                return winGui and winGui:FindFirstChildWhichIsA("Frame", true)
+            end
+            local w, x = function()
+                    if j.OutsideWindow or j.DropdownOutsideWindow then
+                        -- Side popup: appear around the window (right, left, top or bottom),
+                        -- automatically picking a free slot when multiple are open at once.
+                        local winFrame = _winFrame()
+                        local winLeft   = winFrame and winFrame.AbsolutePosition.X or 0
+                        local winTop    = winFrame and winFrame.AbsolutePosition.Y or 0
+                        local winRight  = winFrame and (winFrame.AbsolutePosition.X + winFrame.AbsoluteSize.X) or (p.AbsolutePosition.X + p.AbsoluteSize.X + 8)
+                        local winBottom = winFrame and (winFrame.AbsolutePosition.Y + winFrame.AbsoluteSize.Y) or (p.AbsolutePosition.Y + p.AbsoluteSize.Y + 8)
+                        local winCenterX = winFrame and (winLeft + winFrame.AbsoluteSize.X / 2) or winLeft
+                        local popW     = v.AbsoluteSize.X
+                        local popH     = v.AbsoluteSize.Y
+
+                        local rightFits  = (winRight + 8 + popW) <= (ai.ViewportSize.X - 8)
+                        local leftFits   = (winLeft - 8 - popW) >= 8
+                        local topFits    = (winTop - 8 - popH) >= 8
+                        local bottomFits = (winBottom + 8 + popH) <= (ai.ViewportSize.Y - 8)
+
+                        local slotOrder = {"right", "left", "bottom", "top"}
+                        local fits = {right = rightFits, left = leftFits, top = topFits, bottom = bottomFits}
+                        local side = nil
+                        -- Prefer a slot that's completely free
+                        for _, s2 in ipairs(slotOrder) do
+                            if fits[s2] and (_outsideSideOwner[s2] == nil or _outsideSideOwner[s2] == l) then
+                                side = s2
+                                break
+                            end
+                        end
+                        -- Nothing fully free: fall back to whatever slot fits, preferring "right"
+                        if not side then
+                            for _, s2 in ipairs(slotOrder) do
+                                if fits[s2] then side = s2; break end
+                            end
+                        end
+                        side = side or "right"
+
+                        if _outsideSideOwner[l._outsideSide or ""] == l then
+                            _outsideSideOwner[l._outsideSide] = nil
+                        end
+                        l._outsideSide = side
+                        _outsideSideOwner[side] = l
+
+                        local popX, popY
+                        if side == "left" then
+                            popX = leftFits and (winLeft - 8 - popW) or math.min(winLeft - 8 - popW, ai.ViewportSize.X - popW - 8)
+                            popX = math.min(popX, winLeft - popW - 2)
+                            if #l.Values > 10 then popY = winTop else
+                                popY = math.max(8, math.min(p.AbsolutePosition.Y + p.AbsoluteSize.Y / 2 - popH / 2, ai.ViewportSize.Y - popH - 8))
+                            end
+                        elseif side == "top" then
+                            popY = topFits and (winTop - 8 - popH) or math.min(winTop - 8 - popH, 8)
+                            popY = math.min(popY, winTop - popH - 2)
+                            popX = math.max(8, math.min(winCenterX - popW / 2, ai.ViewportSize.X - popW - 8))
+                        elseif side == "bottom" then
+                            popY = bottomFits and (winBottom + 8) or math.max(winBottom + 2, ai.ViewportSize.Y - popH - 8)
+                            -- Slight diagonal offset from the window's left edge, distinguishing it from a centred top/bottom popup
+                            popX = math.max(8, math.min(winLeft + 24, ai.ViewportSize.X - popW - 8))
+                        else -- right
+                            popX = rightFits and (winRight + 8) or math.max(winRight + 2, ai.ViewportSize.X - popW - 8)
+                            if #l.Values > 10 then popY = winTop else
+                                popY = math.max(8, math.min(p.AbsolutePosition.Y + p.AbsoluteSize.Y / 2 - popH / 2, ai.ViewportSize.Y - popH - 8))
+                            end
+                        end
+                        -- Final safety net: if the computed position still spatially overlaps the
+                        -- window's own bounds (e.g. on very small screens), nudge it to the nearest
+                        -- non-overlapping edge so dropdowns can never sit on top of and block the
+                        -- title bar or any other part of the window from receiving input.
+                        if winFrame then
+                            local popRight, popBottom = popX + popW, popY + popH
+                            local overlapsWindow = popX < winRight and popRight > winLeft and popY < winBottom and popBottom > winTop
+                            if overlapsWindow then
+                                if side == "left" or side == "right" then
+                                    popX = (side == "left") and (winLeft - popW - 2) or (winRight + 2)
+                                else
+                                    popY = (side == "top") and (winTop - popH - 2) or (winBottom + 2)
+                                end
+                            end
+                        end
+                        v.Position = UDim2.fromOffset(popX, popY)
+                    else
+                        -- Normal popup: appear below the button, aligned to button left
+                        local popX = p.AbsolutePosition.X
+                        local popY = p.AbsolutePosition.Y + p.AbsoluteSize.Y + 4
+                        -- Flip above if not enough space below
+                        if popY + v.AbsoluteSize.Y > ai.ViewportSize.Y - 8 then
+                            popY = p.AbsolutePosition.Y - v.AbsoluteSize.Y - 4
+                        end
+                        popY = math.max(8, popY)
+                        v.Position = UDim2.fromOffset(popX, popY)
+                    end
+                end, 0
+            local y, z = function()
+                    local minH = 42
+                    local maxH = 392
+                    if j.OutsideWindow or j.DropdownOutsideWindow then
+                        local winFrame = _winFrame()
+                        local winH = winFrame and winFrame.AbsoluteSize.Y or ai.ViewportSize.Y
+                        local isSideSlot = (l._outsideSide == "left" or l._outsideSide == "right" or l._outsideSide == nil)
+                        if #l.Values > 10 and isSideSlot then
+                            -- Side-panel mode: dropdown is the same size as the window
+                            v.Size = UDim2.fromOffset(x, winH)
+                        else
+                            maxH = math.max(minH, winH - 16)
+                            local h2 = s.AbsoluteContentSize.Y + 10
+                            v.Size = UDim2.fromOffset(x, math.max(math.min(h2, maxH), minH))
+                        end
+                    else
+                        if #l.Values > 10 then
+                            v.Size = UDim2.fromOffset(x, math.min(maxH, 392))
+                        else
+                            local h2 = s.AbsoluteContentSize.Y + 10
+                            v.Size = UDim2.fromOffset(x, math.max(math.min(h2, maxH), minH))
+                        end
+                    end
+                end, function()
+                    t.CanvasSize = UDim2.fromOffset(0, s.AbsoluteContentSize.Y)
+                end
+            y()
+            w()
+            c.AddSignal(p:GetPropertyChangedSignal "AbsolutePosition", w)
+            c.AddSignal(p:GetPropertyChangedSignal "AbsoluteSize", function() y() w() end)
+            -- OutsideWindow popups live in PopupGUI. Close them when the actual
+            -- window is hidden, otherwise the popup can visually remain behind.
+            pcall(function()
+                local windowRoot = h.Library and h.Library.Window and h.Library.Window.Root
+                if windowRoot then
+                    c.AddSignal(windowRoot:GetPropertyChangedSignal("Visible"), function()
+                        if not windowRoot.Visible and l.Opened then
+                            l:Close()
+                        end
+                    end)
+                end
+            end)
+            pcall(function()
+                local gui = h.Library and h.Library.GUI
+                if gui then
+                    c.AddSignal(gui.Destroying, function()
+                        if l.Opened then
+                            l:Close()
+                        end
+                    end)
+                end
+            end)
+
+            c.AddSignal(
+                p.MouseButton1Click,
+                function()
+                    if l.Opened then
+                        l:Close()
+                    else
+                        l:Open()
+                    end
+                end
+            )
+            c.AddSignal(
+                ag.InputBegan,
+                function(A)
+                    if not l.Opened then return end
+                    if A.UserInputType == Enum.UserInputType.MouseButton1 or A.UserInputType == Enum.UserInputType.Touch then
+                        local B, C = u.AbsolutePosition, u.AbsoluteSize
+                        local insideDropdown = ah.X >= B.X and ah.X <= B.X + C.X and ah.Y >= (B.Y - 20 - 1) and ah.Y <= B.Y + C.Y
+                        if insideDropdown then return end
+                        if j.OutsideWindow or j.DropdownOutsideWindow then
+                            local winGui = h.Library.GUI or h.Library.PopupGUI
+                            local winFrame = winGui and winGui:FindFirstChildWhichIsA("Frame", true)
+                            if winFrame then
+                                local wp, ws = winFrame.AbsolutePosition, winFrame.AbsoluteSize
+                                local insideWindow = ah.X >= wp.X and ah.X <= wp.X + ws.X and ah.Y >= wp.Y and ah.Y <= wp.Y + ws.Y
+                                if insideWindow then return end
+                            end
+                        end
+                        l:Close()
+                    end
+                end
+            )
+            local A = h.ScrollFrame
+            l._refreshShine = function()
+                local themeSupportsShine = c.GetThemeProperty("ShineEnabled") == true
+                local shouldAnimate
+                if j.IsManagerDropdown then
+                    shouldAnimate = themeSupportsShine and h.Library.ShineEnabled == true
+                else
+                    shouldAnimate = themeSupportsShine and j.Animated == true
+                end
+                ddGradient.Visible = shouldAnimate
+                -- Directly set color without calling AddThemeObject (avoids UpdateTheme recursion)
+                if shouldAnimate then
+                    local acrylicBorder = c.GetThemeProperty("AcrylicBorder")
+                    if acrylicBorder then ddStroke.Color = acrylicBorder end
+                else
+                    local dropBorder = c.GetThemeProperty("DropdownBorder")
+                    if dropBorder then ddStroke.Color = dropBorder end
+                end
+                _applyDropShine(l, u, shouldAnimate)
+            end
+            function l.Open(B)
+                l.Opened = true
+                A.ScrollingEnabled = false
+                y()
+                w()
+                y()
+                v.Visible = true
+                _openDropdowns[l] = true
+                l._refreshShine()
+                af:Create(
+                    u,
+                    TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                    {Size = UDim2.fromScale(1, 1)}
+                ):Play()
+                af:Create(
+                    o,
+                    TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                    {Rotation = 180}
+                ):Play()
+            end
+            function l.Close(B)
+                l.Opened = false
+                A.ScrollingEnabled = true
+                u.Size = UDim2.fromScale(1, 0.6)
+                _openDropdowns[l] = nil
+                v.Visible = false
+                _clearDropShine(l)
+                af:Create(
+                    o,
+                    TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+                    {Rotation = 0}
+                ):Play()
+                if l._outsideSide and _outsideSideOwner[l._outsideSide] == l then
+                    _outsideSideOwner[l._outsideSide] = nil
+                end
+            end
+            function l.Display(B)
+                local C, D = l.Values, ""
+                if j.Multi then
+                    for E, F in next, C do
+                        if l.Value[F] then
+                            D = D .. F .. ", "
+                        end
+                    end
+                    D = D:sub(1, #D - 2)
+                else
+                    D = l.Value or ""
+                end
+                n.Text = (D == "" and "--" or D)
+            end
+            function l.GetActiveValues(B)
+                if j.Multi then
+                    local C = {}
+                    for D, E in next, l.Value do
+                        table.insert(C, D)
+                    end
+                    return C
+                else
+                    return l.Value and 1 or 0
+                end
+            end
+            
+
+            local filterTimer = nil
+            local function updateDropdownFilter()
+                if not ddSearchBox then return end
+                local query = (ddSearchBox.Text or ""):lower():gsub("^%s+",""):gsub("%s+$","")
+                local blank = query == ""
+                for btn, btnObj in pairs(l.Buttons) do
+                    local lbl = btn:FindFirstChild("ButtonLabel")
+                    if lbl then
+                        btn.Visible = blank or lbl.Text:lower():find(query, 1, true) ~= nil
+                    end
+                end
+                z()
+                y()
+            end
+
+            if ddSearchBox then
+                ddSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                    if filterTimer then filterTimer:Disconnect() end
+                    filterTimer = game:GetService("RunService").Stepped:Connect(function()
+                        updateDropdownFilter()
+                        if filterTimer then filterTimer:Disconnect() end
+                        filterTimer = nil
+                    end)
+                end)
+            end
+            
+            local function _resolveDropdownOptionImage(source)
+                if source == nil then return "" end
+
+                if typeof(source) == "Instance" and source:IsA("Player") then
+                    source = {UserId = source.UserId}
+                elseif type(source) == "table" then
+                    if source.Image ~= nil then
+                        return _resolveDropdownOptionImage(source.Image)
+                    end
+                    local userId = source.UserId or source.userId
+                    if userId then
+                        local thumbType = source.ThumbnailType or Enum.ThumbnailType.HeadShot
+                        local thumbSize = source.ThumbnailSize or Enum.ThumbnailSize.Size100x100
+                        local ok, image = pcall(function()
+                            local Players = game:GetService("Players")
+                            local content = Players:GetUserThumbnailAsync(
+                                tonumber(userId), thumbType, thumbSize
+                            )
+                            return content
+                        end)
+                        return (ok and image) or ""
+                    end
+                    return ""
+                elseif type(source) == "number" then
+                    source = "rbxassetid://" .. tostring(source)
+                end
+
+                if type(source) ~= "string" or source == "" then return "" end
+                if source:match("^rbxassetid://") or source:match("^rbxasset://") then
+                    return source
+                end
+                if source:match("^%d+$") then
+                    return "rbxassetid://" .. source
+                end
+                if source:match("^https?://") then
+                    local ok, asset = pcall(function()
+                        return k.MediaManager and k.MediaManager:Image(source)
+                    end)
+                    return (ok and asset) or ""
+                end
+                return ""
+            end
+
+            local function _getDropdownOptionImage(value)
+                local images = l.OptionImages
+                if type(images) ~= "table" then return nil end
+                if images[value] ~= nil then return images[value] end
+                return images[tostring(value)]
+            end
+
+            function l.BuildDropdownList(B)
+                local C, D = l.Values, {}
+                l.Buttons = {}
+                for E, F in next, t:GetChildren() do
+                    if not F:IsA "UIListLayout" then
+                        F:Destroy()
+                    end
+                end
+                local G = 0
+                for H, I in next, C do
+                    local J = {}
+                    G = G + 1
+                    local K, L =
+                        e(
+                            "Frame",
+                            {
+                                Size = UDim2.fromOffset(4, 14),
+                                BackgroundColor3 = Color3.fromRGB(76, 194, 255),
+                                Position = UDim2.fromOffset(-1, 16),
+                                AnchorPoint = Vector2.new(0, 0.5),
+                                ThemeTag = {BackgroundColor3 = "Accent"}
+                            },
+                            {e("UICorner", {CornerRadius = UDim.new(0, 2)})}
+                        ),
+                        e(
+                            "TextLabel",
+                            {
+                                FontFace = Font.new "rbxasset://fonts/families/GothamSSm.json",
+                                Text = I,
+                                TextColor3 = Color3.fromRGB(200, 200, 200),
+                                TextSize = 13,
+                                TextXAlignment = Enum.TextXAlignment.Left,
+                                BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                                AutomaticSize = Enum.AutomaticSize.Y,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.fromScale(1, 1),
+                                Position = UDim2.fromOffset(10, 0),
+                                Name = "ButtonLabel",
+                                ThemeTag = {TextColor3 = "Text"}
+                            }
+                        )
+                    local isTSel = j.IsThemeSelector == true
+                    local rowH = isTSel and 38 or 32
+                    local swatches = {}
+                    if isTSel then
+                        local td = nil
+                        pcall(function()
+                            local tm = e(aa.Themes)
+                            if tm and tm[I] then td = tm[I] end
+                        end)
+                        if td then
+                            local bgC = td.AcrylicMain or Color3.fromRGB(30,30,30)
+                            local elC = td.Element    or Color3.fromRGB(60,60,60)
+                            local acC = td.ThemeAccentColors or {td.Accent or Color3.fromRGB(100,100,100)}
+                            local sw = e("Frame",{
+                                Size=UDim2.fromOffset(66,22),
+                                Position=UDim2.new(1,-70,0.5,0), AnchorPoint=Vector2.new(0,0.5),
+                                BackgroundTransparency=1, ZIndex=25,
+                            })
+                            e("Frame",{Size=UDim2.fromOffset(19,19),Position=UDim2.fromOffset(0,1),
+                                BackgroundColor3=bgC,ZIndex=25,Parent=sw},
+                                {e("UICorner",{CornerRadius=UDim.new(0,4)})})
+                            e("Frame",{Size=UDim2.fromOffset(19,19),Position=UDim2.fromOffset(22,1),
+                                BackgroundColor3=elC,ZIndex=25,Parent=sw},
+                                {e("UICorner",{CornerRadius=UDim.new(0,4)})})
+                            if #acC > 1 then
+                                local sw2 = math.floor(19/#acC)
+                                for _ci,col in ipairs(acC) do
+                                    e("Frame",{Size=UDim2.fromOffset(sw2,19),
+                                        Position=UDim2.fromOffset(44+(_ci-1)*sw2,1),
+                                        BackgroundColor3=col,ZIndex=25,Parent=sw},
+                                        {e("UICorner",{CornerRadius=UDim.new(0,(_ci==1 or _ci==#acC) and 4 or 0)})})
+                                end
+                            else
+                                e("Frame",{Size=UDim2.fromOffset(19,19),Position=UDim2.fromOffset(44,1),
+                                    BackgroundColor3=acC[1],ZIndex=25,Parent=sw},
+                                    {e("UICorner",{CornerRadius=UDim.new(0,4)})})
+                            end
+                            table.insert(swatches, sw)
+                            L.Size = UDim2.new(1,-82,1,0)
+                        end
+                    end
+                    local optionImageSource = _getDropdownOptionImage(I)
+                    local optionImage
+                    if optionImageSource ~= nil then
+                        optionImage = e("ImageLabel", {
+                            Name = "OptionImage",
+                            Size = UDim2.fromOffset(22, 22),
+                            Position = UDim2.new(0, 9, 0.5, 0),
+                            AnchorPoint = Vector2.new(0, 0.5),
+                            BackgroundTransparency = 1,
+                            ScaleType = Enum.ScaleType.Fit,
+                            Image = "",
+                            ZIndex = 24,
+                        })
+                        e("UICorner", {CornerRadius = UDim.new(1, 0), Parent = optionImage})
+                        L.Position = UDim2.fromOffset(38, 0)
+                        L.Size = UDim2.new(1, -42, 1, 0)
+                    end
+
+                    local btnChildren = {K, L, e("UICorner",{CornerRadius=UDim.new(0,6)})}
+                    if optionImage then table.insert(btnChildren, optionImage) end
+                    for _,sw in ipairs(swatches) do table.insert(btnChildren,sw) end
+                    local M, N =
+                        (e(
+                        "TextButton",
+                        {
+                            Size = UDim2.new(1, -5, 0, rowH),
+                            BackgroundTransparency = 1,
+                            ZIndex = 23,
+                            Text = "",
+                            Parent = t,
+                            ThemeTag = {BackgroundColor3 = "DropdownOption"}
+                        },
+                        btnChildren
+                    ))
+
+                    if optionImage then
+                        task.spawn(function()
+                            local resolved = _resolveDropdownOptionImage(optionImageSource)
+                            if optionImage and optionImage.Parent and resolved ~= "" then
+                                optionImage.Image = resolved
+                            end
+                        end)
+                    end
+
+                    if j.Multi then
+                        N = l.Value[I]
+                    else
+                        N = l.Value == I
+                    end
+                    local O, P = c.SpringMotor(1, M, "BackgroundTransparency")
+                    local Q, R = c.SpringMotor(1, K, "BackgroundTransparency")
+                    local S = d.SingleMotor.new(6)
+                    S:onStep(
+                        function(T)
+                            K.Size = UDim2.new(0, 4, 0, T)
+                        end
+                    )
+                    c.AddSignal(
+                        M.MouseEnter,
+                        function()
+                            P(N and 0.85 or 0.89)
+                        end
+                    )
+                    c.AddSignal(
+                        M.MouseLeave,
+                        function()
+                            P(N and 0.89 or 1)
+                        end
+                    )
+                    c.AddSignal(
+                        M.MouseButton1Down,
+                        function()
+                            P(0.92)
+                        end
+                    )
+                    c.AddSignal(
+                        M.MouseButton1Up,
+                        function()
+                            P(N and 0.85 or 0.89)
+                        end
+                    )
+                    function J.UpdateButton(T)
+                        if j.Multi then
+                            N = l.Value[I]
+                            if N then
+                                P(0.89)
+                            end
+                        else
+                            N = l.Value == I
+                            P(N and 0.89 or 1)
+                        end
+                        S:setGoal(d.Spring.new(N and 14 or 6, {frequency = 6}))
+                        R(N and 0 or 1)
+                    end
+                    L.InputBegan:Connect(
+                        function(T)
+                            if
+                                T.UserInputType == Enum.UserInputType.MouseButton1 or
+                                    T.UserInputType == Enum.UserInputType.Touch
+                             then
+                                local U = not N
+                                if l:GetActiveValues() == 1 and not U and not j.AllowNull then
+                                else
+                                    if j.Multi then
+                                        N = U
+                                        l.Value[I] = N and true or nil
+                                    else
+                                        N = U
+                                        l.Value = N and I or nil
+                                        for V, W in next, D do
+                                            W:UpdateButton()
+                                        end
+                                    end
+                                    J:UpdateButton()
+                                    l:Display()
+                                    k:SafeCallback(l.Callback, l.Value)
+                                    k:SafeCallback(l.Changed, l.Value)
+                                end
+                            end
+                        end
+                    )
+                    J:UpdateButton()
+                    l:Display()
+                    D[M] = J
+                    l.Buttons[M] = J
+                end
+                x = 0
+                for J, K in next, D do
+                    local lbl = J:FindFirstChild("ButtonLabel")
+                    if lbl and lbl.TextBounds.X > x then
+                        x = lbl.TextBounds.X
+                    end
+                end
+                if j.IsThemeSelector then
+                    x = math.max(x + 30, 210)
+                else
+                    x = x + 30
+                end
+                -- fallback: use button width if TextBounds not ready yet
+                if x < 60 then
+                    x = p.AbsoluteSize.X > 0 and p.AbsoluteSize.X or 170
+                end
+                z()
+                task.defer(function()
+                    -- re-measure after render
+                    local mx = 0
+                    for J2, K2 in next, D do
+                        local lbl2 = J2:FindFirstChild("ButtonLabel")
+                        if lbl2 and lbl2.TextBounds.X > mx then
+                            mx = lbl2.TextBounds.X
+                        end
+                    end
+                    if mx > 0 then
+                        if j.IsThemeSelector then
+                            x = math.max(mx + 30, 210)
+                        else
+                            x = mx + 30
+                        end
+                    end
+                    y()
+                end)
+            end
+            function l.SetOptionImage(B, optionValue, imageSource)
+                l.OptionImages = l.OptionImages or {}
+                if imageSource == nil then
+                    l.OptionImages[optionValue] = nil
+                    l.OptionImages[tostring(optionValue)] = nil
+                else
+                    l.OptionImages[optionValue] = imageSource
+                end
+                l:BuildDropdownList()
+                l:Display()
+            end
+
+            function l.SetOptionImages(B, imageMap)
+                l.OptionImages = type(imageMap) == "table" and imageMap or {}
+                l:BuildDropdownList()
+                l:Display()
+            end
+
+            function l.SetOptionProfileImage(B, optionValue, userId, thumbnailType, thumbnailSize)
+                l:SetOptionImage(optionValue, {
+                    UserId = userId,
+                    ThumbnailType = thumbnailType or Enum.ThumbnailType.HeadShot,
+                    ThumbnailSize = thumbnailSize or Enum.ThumbnailSize.Size100x100,
                 })
-                if defaultShadow then table.insert(popupChildren, defaultShadow) end
             end
 
-            if searchBox then
-                table.insert(popupChildren, 1, searchBox)
+            function l.GetOptionImage(B, optionValue)
+                return _getDropdownOptionImage(optionValue)
             end
 
-            local t = e(
-                "Frame",
-                {
-                    Size = UDim2.fromScale(1, 0.6),
-                    ThemeTag = { BackgroundColor3 = "DropdownHolder" }
-                },
-                popupChildren
-            )
-
-            local targetParent = (k and (k.PopupGUI or k.GUI)) or l.Frame
-            local u = e(
-                "Frame",
-                {
-                    BackgroundTransparency = 1,
-                    Size = UDim2.fromOffset(170, 300),
-                    Parent = targetParent,
-                    Visible = false,
-                    ZIndex = 100,
-                },
-                {
-                    t,
-                    e("UISizeConstraint", { MinSize = Vector2.new(170, 0) })
-                }
-            )
-
-            if k and type(k.OpenFrames) == "table" and u then
-                table.insert(k.OpenFrames, u)
-            end
-
-            local function isOutside()
-                if config.DropdownOutsideWindow ~= nil then return config.DropdownOutsideWindow end
-                if k and k.DropdownsOutsideWindow then return true end
-                return false
-            end
-
-            local popupWidth = 170
-
-            local function getCalculatedDimensions()
-                local count = 0
-                for _, item in ipairs(m.ButtonPool) do
-                    if item.Button and item.Button.Visible then
-                        count = count + 1
-                    end
-                end
-                local minH = showSearch and 75 or 42
-                local computedH = (count * 35) + (showSearch and 42 or 14)
-                local totalH
-                if count > 10 then
-                    totalH = 392
-                else
-                    totalH = math.max(computedH, minH)
-                end
-                local canvasH = count * 35
-                return totalH, canvasH, count
-            end
-
-            local function updatePos()
-                if not m.Opened then return end
-                if isOutside() then
-                    local winFrame = (k and k.Window and (k.Window.Root or k.Window.Frame))
-                        or (k and k.GUI and k.GUI:FindFirstChildWhichIsA("Frame", true))
-                    local winRight = winFrame and (winFrame.AbsolutePosition.X + winFrame.AbsoluteSize.X)
-                        or (p.AbsolutePosition.X + p.AbsoluteSize.X + 8)
-                    local popX = winRight + 8
-                    local popY = p.AbsolutePosition.Y + p.AbsoluteSize.Y / 2 - u.AbsoluteSize.Y / 2
-                    local maxY = (ai and ai.ViewportSize.Y or 1000) - u.AbsoluteSize.Y - 8
-                    popY = math.max(8, math.min(popY, maxY))
-                    u.Position = UDim2.fromOffset(popX, popY)
-                else
-                    local popX = p.AbsolutePosition.X
-                    local popY = p.AbsolutePosition.Y + p.AbsoluteSize.Y + 4
-                    local vpY  = (ai and ai.ViewportSize.Y or 1000)
-                    if popY + u.AbsoluteSize.Y > vpY - 8 then
-                        popY = p.AbsolutePosition.Y - u.AbsoluteSize.Y - 4
-                    end
-                    popY = math.max(8, popY)
-                    u.Position = UDim2.fromOffset(popX, popY)
-                end
-            end
-
-            local function updateSize()
-                if not m.Opened then return end
-                local totalH, canvasH = getCalculatedDimensions()
-                u.Size = UDim2.fromOffset(popupWidth, totalH)
-                s.CanvasSize = UDim2.fromOffset(0, canvasH)
-            end
-
-            local function updateCanvas()
-                if not m.Opened then return end
-                local _, canvasH = getCalculatedDimensions()
-                s.CanvasSize = UDim2.fromOffset(0, canvasH)
-            end
-
-            safeConnect(p:GetPropertyChangedSignal("AbsolutePosition"), function()
-                if m.Opened then updatePos() end
-            end)
-            safeConnect(p:GetPropertyChangedSignal("AbsoluteSize"), function()
-                if m.Opened then
-                    updatePos()
-                    updateSize()
-                end
-            end)
-            safeConnect(r:GetPropertyChangedSignal("AbsoluteContentSize"), function()
-                if m.Opened then
-                    updateCanvas()
-                    updateSize()
-                end
-            end)
-
-            local function isPointInside(absPos, absSize, pt)
-                return pt.X >= absPos.X and pt.X <= (absPos.X + absSize.X)
-                    and pt.Y >= absPos.Y and pt.Y <= (absPos.Y + absSize.Y)
-            end
-
-            -- Outside click listener: ignores clicks on toggle button or popup
-            safeConnect(ag.InputBegan, function(inp)
-                if not m.Opened then return end
-                if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-                    local mousePos = Vector2.new(inp.Position.X, inp.Position.Y)
-                    if isPointInside(p.AbsolutePosition, p.AbsoluteSize, mousePos) then
-                        return
-                    end
-                    if isPointInside(t.AbsolutePosition, t.AbsoluteSize, mousePos) then
-                        return
-                    end
-                    m:Close()
-                end
-            end)
-
-            -- Toggle button listener
-            safeConnect(p.MouseButton1Click, function()
-                m:Toggle()
-            end)
-
-            local sf = h.ScrollFrame
-
-            function m:Open()
-                if m.Opened then return end
-                m.Opened = true
-                if sf then sf.ScrollingEnabled = false end
-
-                u.Visible = true
-                updateSize()
-                updateCanvas()
-                updatePos()
-
-                local ti = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-                af:Create(o, ti, { Rotation = 180 }):Play()
-                af:Create(t, ti, { Size = UDim2.fromScale(1, 1) }):Play()
-
-                if Animation and Animation.Apply and k then
-                    pcall(function()
-                        local thm = ac(aj.Themes)[k.Theme]
-                        Animation.Apply(thm, t, k.ShineEnabled)
-                    end)
-                end
-            end
-
-            function m:Close()
-                if not m.Opened then return end
-                m.Opened = false
-                if sf then sf.ScrollingEnabled = true end
-
-                local ti = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-                af:Create(o, ti, { Rotation = 0 }):Play()
-                t.Size = UDim2.fromScale(1, 0.6)
-                u.Visible = false
-
-                _clearDropShine(m)
-
-                if searchBox and searchBox.Text ~= "" then
-                    searchBox.Text = ""
-                end
-            end
-
-            function m:Toggle()
-                if m.Opened then
-                    m:Close()
-                else
-                    m:Open()
-                end
-            end
-
-            -- Auto-close if Tab or Container is hidden
-            safeConnect(l.Frame:GetPropertyChangedSignal("Visible"), function()
-                if not l.Frame.Visible and m.Opened then
-                    m:Close()
-                end
-            end)
-
-            if h.Container and h.Container:IsA("GuiObject") then
-                safeConnect(h.Container:GetPropertyChangedSignal("Visible"), function()
-                    if not h.Container.Visible and m.Opened then
-                        m:Close()
-                    end
-                end)
-            end
-
-            -- Auto-close if Window is minimized / hidden
-            if k and k.Window then
-                local winRoot = k.Window.Root or (k.Window.Frame and k.Window.Frame.Parent)
-                if winRoot and winRoot:IsA("GuiObject") then
-                    safeConnect(winRoot:GetPropertyChangedSignal("Visible"), function()
-                        if not winRoot.Visible and m.Opened then
-                            m:Close()
-                        end
-                    end)
-                end
-            end
-
-            -- Clean up if element is destroyed
-            safeConnect(l.Frame.AncestryChanged, function(_, newParent)
-                if not newParent then
-                    m:Destroy()
-                end
-            end)
-
-            function m:Display()
-                local text = ""
-                if m.Multi then
-                    local parts = {}
-                    for _, val in ipairs(m.Values) do
-                        if val ~= nil and m.Value[val] then
-                            table.insert(parts, tostring(val))
-                        end
-                    end
-                    text = table.concat(parts, ", ")
-                else
-                    text = tostring(m.Value or "")
-                end
-                n.Text = (text == "" or text == "nil") and "--" or text
-            end
-
-            function m:SetValue(val)
-                if m.Multi then
-                    if type(val) == "table" then
-                        m.Value = val
-                    elseif type(val) == "string" or type(val) == "number" then
-                        m.Value = { [tostring(val)] = true }
-                    else
-                        m.Value = {}
-                    end
-                else
-                    m.Value = val
-                end
-
-                for _, item in ipairs(m.ButtonPool) do
-                    if item.SelBar and item.Value ~= nil then
-                        local isSelected = m.Multi and (m.Value[item.Value] == true) or (m.Value == item.Value)
-                        item.SelBar.Visible = isSelected
-                    end
-                end
-
-                m:Display()
-                if k and k.SafeCallback then
-                    k:SafeCallback(m.Callback, m.Value)
-                    k:SafeCallback(m.Changed, m.Value)
-                else
-                    pcall(m.Callback, m.Value)
-                    if m.Changed then pcall(m.Changed, m.Value) end
-                end
-            end
-
-            local function createPooledButton(index)
-                local selBar = e(
-                    "Frame",
-                    {
-                        Size = UDim2.fromOffset(4, 14),
-                        BackgroundColor3 = Color3.fromRGB(76, 194, 255),
-                        Position = UDim2.fromOffset(-1, 0),
-                        AnchorPoint = Vector2.new(0, 0.5),
-                        ThemeTag = { BackgroundColor3 = "Accent" },
-                        Visible = false,
-                    },
-                    { e("UICorner", { CornerRadius = UDim.new(0, 2) }) }
-                )
-
-                local lbl = e(
-                    "TextLabel",
-                    {
-                        FontFace = Font.new "rbxasset://fonts/families/GothamSSm.json",
-                        Text = "",
-                        TextSize = 13,
-                        TextXAlignment = Enum.TextXAlignment.Left,
-                        BackgroundTransparency = 1,
-                        AutomaticSize = Enum.AutomaticSize.Y,
-                        Size = UDim2.fromScale(1, 1),
-                        Position = UDim2.fromOffset(10, 0),
-                        Name = "ButtonLabel",
-                        ThemeTag = { TextColor3 = "Text" }
-                    }
-                )
-
-                local row = e(
-                    "TextButton",
-                    {
-                        Size = UDim2.new(1, 0, 0, 32),
-                        BackgroundTransparency = 1,
-                        Text = "",
-                        Parent = s,
-                        ThemeTag = { BackgroundColor3 = "DropdownOption" }
-                    },
-                    {
-                        e("UICorner", { CornerRadius = UDim.new(0, 4) }),
-                        selBar,
-                        lbl
-                    }
-                )
-
-                local item = {
-                    Button = row,
-                    Label  = lbl,
-                    SelBar = selBar,
-                    Value  = nil,
-                }
-
-                safeConnect(row.MouseButton1Click, function()
-                    local currentVal = item.Value
-                    if currentVal == nil then return end
-
-                    if m.Multi then
-                        m.Value[currentVal] = not m.Value[currentVal]
-                        selBar.Visible = (m.Value[currentVal] == true)
-                    else
-                        for _, otherItem in ipairs(m.ButtonPool) do
-                            if otherItem.SelBar then otherItem.SelBar.Visible = false end
-                        end
-                        m.Value = currentVal
-                        selBar.Visible = true
-                        m:Close()
-                    end
-
-                    m:Display()
-                    if k and k.SafeCallback then
-                        k:SafeCallback(m.Callback, m.Value)
-                        k:SafeCallback(m.Changed, m.Value)
-                    else
-                        pcall(m.Callback, m.Value)
-                        if m.Changed then pcall(m.Changed, m.Value) end
-                    end
-                end)
-
-                safeConnect(row.MouseEnter, function()
-                    local ti = TweenInfo.new(0.1)
-                    af:Create(row, ti, { BackgroundTransparency = 0.85 }):Play()
-                end)
-                safeConnect(row.MouseLeave, function()
-                    local ti = TweenInfo.new(0.1)
-                    af:Create(row, ti, { BackgroundTransparency = 1 }):Play()
-                end)
-
-                m.ButtonPool[index] = item
-                return item
-            end
-
-            function m:BuildList()
-                local newCount     = #m.Values
-                local currentQuery = searchBox and searchBox.Text:lower():gsub("^%s+", ""):gsub("%s+$", "") or ""
-                local isFiltering  = currentQuery ~= ""
-
-                m.Buttons          = {}
-
-                for i = 1, newCount do
-                    local val               = m.Values[i]
-                    local item              = m.ButtonPool[i] or createPooledButton(i)
-
-                    item.Value              = val
-                    item.Label.Text         = tostring(val)
-                    item.Button.LayoutOrder = i
-
-                    local isSelected        = m.Multi and (m.Value[val] == true) or (m.Value == val)
-                    item.SelBar.Visible     = isSelected
-
-                    if isFiltering then
-                        item.Button.Visible = tostring(val):lower():find(currentQuery, 1, true) ~= nil
-                    else
-                        item.Button.Visible = true
-                    end
-
-                    m.Buttons[item.Button] = val
-                end
-
-                for i = newCount + 1, #m.ButtonPool do
-                    local item = m.ButtonPool[i]
-                    item.Value = nil
-                    item.Button.Visible = false
-                end
-
-                if m.Opened then
-                    updateCanvas()
-                    updateSize()
-                end
-            end
-
-            function m:SetValues(vals)
-                vals = vals or {}
-                if arraysEqual(m.Values, vals) then
-                    m:Display()
+            function l.SetValues(B, C)
+                if type(C) ~= "table" then
                     return
                 end
 
-                m.Values = vals
-                m:BuildList()
-                m:Display()
-            end
-
-            function m:GetActiveValues()
-                if m.Multi then
-                    local out = {}
-                    for _, val in ipairs(m.Values) do
-                        if val ~= nil and m.Value[val] then
-                            table.insert(out, val)
-                        end
-                    end
-                    return out
-                end
-                return m.Value and { m.Value } or {}
-            end
-
-            function m:OnChanged(cb)
-                m.Changed = cb
-            end
-
-            local filterTimer
-            local function applyFilter()
-                if not searchBox then return end
-                local q = (searchBox.Text or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-                local blank = (q == "")
-
-                for i = 1, #m.Values do
-                    local item = m.ButtonPool[i]
-                    if item and item.Button then
-                        if blank then
-                            item.Button.Visible = true
-                        else
-                            local text = tostring(item.Value or ""):lower()
-                            item.Button.Visible = text:find(q, 1, true) ~= nil
+                -- Avoid rebuilding every option when a periodic refresh produces
+                -- the exact same list. This is intentionally a very small optimization
+                -- so the normal dropdown implementation remains untouched.
+                local oldValues = l.Values
+                local changed = (type(oldValues) ~= "table") or (#oldValues ~= #C)
+                if not changed then
+                    for index = 1, #C do
+                        if oldValues[index] ~= C[index] then
+                            changed = true
+                            break
                         end
                     end
                 end
 
-                if m.Opened then
-                    updateCanvas()
-                    updateSize()
+                if not changed then
+                    return
                 end
-            end
 
-            if searchBox then
-                safeConnect(searchBox:GetPropertyChangedSignal("Text"), function()
-                    if filterTimer then filterTimer:Disconnect() end
-                    filterTimer = _RS_dd.Stepped:Connect(function()
-                        applyFilter()
-                        if filterTimer then
-                            filterTimer:Disconnect()
-                            filterTimer = nil
+                l.Values = C
+                l:BuildDropdownList()
+            end
+            function l.OnChanged(B, C)
+                l.Changed = C
+                C(l.Value)
+            end
+            function l.SetValue(B, C)
+                if l.Multi then
+                    local D = {}
+                    for E, F in next, C do
+                        if table.find(l.Values, E) then
+                            D[E] = true
                         end
-                    end)
-                end)
+                    end
+                    l.Value = D
+                else
+                    if not C then
+                        l.Value = nil
+                    elseif table.find(l.Values, C) then
+                        l.Value = C
+                    end
+                end
+                l:BuildDropdownList()
+                k:SafeCallback(l.Callback, l.Value)
+                k:SafeCallback(l.Changed, l.Value)
             end
-
-            function m:Destroy()
-                _clearDropShine(m)
-                for _, conn in ipairs(m._connections) do
-                    pcall(function() conn:Disconnect() end)
-                end
-                table.clear(m._connections)
-
-                if l and l.Frame then
-                    pcall(function() l.Frame:Destroy() end)
-                end
-                if u then
-                    pcall(function() u:Destroy() end)
-                end
-                if k and k.Options and idx then
-                    k.Options[idx] = nil
-                end
+            function l.Destroy(B)
+                m:Destroy()
+                k.Options[i] = nil
             end
-
-            m:BuildList()
-            m:Display()
-
-            if k and k.Options and idx then
-                k.Options[idx] = m
+            l:BuildDropdownList()
+            l:Display()
+            local B = {}
+            if type(j.Default) == "string" then
+                local C = table.find(l.Values, j.Default)
+                if C then
+                    table.insert(B, C)
+                end
+            elseif type(j.Default) == "table" then
+                for C, D in next, j.Default do
+                    local E = table.find(l.Values, D)
+                    if E then
+                        table.insert(B, E)
+                    end
+                end
+            elseif type(j.Default) == "number" and l.Values[j.Default] ~= nil then
+                table.insert(B, j.Default)
             end
-
-            return m
+            if next(B) then
+                for C = 1, #B do
+                    local D = B[C]
+                    if j.Multi then
+                        l.Value[l.Values[D]] = true
+                    else
+                        l.Value = l.Values[D]
+                    end
+                    if not j.Multi then
+                        break
+                    end
+                end
+                l:BuildDropdownList()
+                l:Display()
+            end
+            k.Options[i] = l
+            return l
         end
-
         return g
     end,
     [23] = function() --[[ Input_El ]]
@@ -7492,7 +7897,6 @@ local aa = {
 
             local initialTitle = d.Title
             local initialContent = d.Content
-            local initialInline = d.Inline == true
 
             local e = ac(ag.Element)(
                 initialTitle or "",
@@ -7504,55 +7908,16 @@ local aa = {
             e.Frame.BackgroundTransparency = 0.92
             e.Border.Transparency = 0.6
 
+            -- Keep track of the current Paragraph values.
             e.Title = initialTitle
             e.Content = initialContent or ""
-            e.Inline = initialInline
 
+            -- Preserve the original Element methods before overriding them.
             local _SetTitle = e.SetTitle
             local _SetDesc = e.SetDesc
-            local labelHolder = e.LabelHolder
-            local labelLayout = labelHolder and labelHolder:FindFirstChildWhichIsA("UIListLayout")
 
-            local function applyInline(inline)
-                e.Inline = inline == true
-
-                if not labelHolder then
-                    return
-                end
-
-                if e.Inline then
-                    if labelLayout then
-                        labelLayout.FillDirection = Enum.FillDirection.Horizontal
-                        labelLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-                        labelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-                        labelLayout.Padding = UDim.new(0, 4)
-                    end
-
-                    e.TitleLabel.AutomaticSize = Enum.AutomaticSize.X
-                    e.TitleLabel.Size = UDim2.new(0, 0, 0, 14)
-                    e.TitleLabel.TextWrapped = false
-
-                    e.DescLabel.AutomaticSize = Enum.AutomaticSize.X
-                    e.DescLabel.Size = UDim2.new(0, 0, 0, 14)
-                    e.DescLabel.TextWrapped = false
-                else
-                    if labelLayout then
-                        labelLayout.FillDirection = Enum.FillDirection.Vertical
-                        labelLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-                        labelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-                        labelLayout.Padding = UDim.new(0, 0)
-                    end
-
-                    e.TitleLabel.AutomaticSize = Enum.AutomaticSize.Y
-                    e.TitleLabel.Size = UDim2.new(1, 0, 0, 14)
-                    e.TitleLabel.TextWrapped = true
-
-                    e.DescLabel.AutomaticSize = Enum.AutomaticSize.Y
-                    e.DescLabel.Size = UDim2.new(1, 0, 0, 14)
-                    e.DescLabel.TextWrapped = true
-                end
-            end
-
+            -- Paragraph-specific title setter.
+            -- SetTitle(nil) or SetTitle("") hides the title.
             function e:SetTitle(value)
                 e.Title = value
 
@@ -7565,20 +7930,19 @@ local aa = {
                 end
             end
 
+            -- Paragraph-specific content setter.
             function e:SetContent(value)
                 value = value == nil and "" or tostring(value)
                 e.Content = value
                 _SetDesc(e, value)
             end
 
-            function e:SetInline(value)
-                applyInline(value)
-            end
-
-            function e:IsInline()
-                return e.Inline == true
-            end
-
+            -- Update both fields at once.
+            --
+            -- Examples:
+            -- paragraph:SetParagraph({Title = "New title", Content = "Hello"})
+            -- paragraph:SetParagraph({Title = false, Content = "Hello"}) -- hide title
+            -- paragraph:SetParagraph({Content = "Hello"}) -- keep current title
             function e:SetParagraph(config)
                 if type(config) ~= "table" then
                     return
@@ -7595,20 +7959,18 @@ local aa = {
                 if config.Content ~= nil then
                     e:SetContent(config.Content)
                 end
-
-                if config.Inline ~= nil then
-                    applyInline(config.Inline)
-                end
             end
 
+            -- Alias with a shorter name.
             e.Set = e.SetParagraph
 
+            -- Apply the initial visibility/content through the new API.
             e:SetTitle(initialTitle)
             e:SetContent(initialContent)
-            applyInline(initialInline)
 
             return e
         end
+
         return aj
     end,
     [26] = function() --[[ Slider_El ]]
