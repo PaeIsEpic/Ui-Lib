@@ -6517,6 +6517,21 @@ local aa = {
                 _shineConns  = {},
             }
 
+            local function safeConnect(signal, callback)
+                if not signal then return nil end
+                local conn
+                if c and c.AddSignal then
+                    pcall(function() conn = c.AddSignal(signal, callback) end)
+                end
+                if not conn then
+                    pcall(function() conn = signal:Connect(callback) end)
+                end
+                if conn then
+                    table.insert(m._connections, conn)
+                end
+                return conn
+            end
+
             if m.Multi then
                 if type(m.Value) ~= "table" then
                     if m.Value ~= nil then
@@ -6584,24 +6599,24 @@ local aa = {
             )
 
             local showSearch = not (config.NoSearch == true or config.Search == false)
-            local searchBox = showSearch and e(
-                "TextBox",
-                {
-                    FontFace = Font.new "rbxasset://fonts/families/GothamSSm.json",
-                    TextSize = 11,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    BackgroundTransparency = 0.7,
-                    BorderSizePixel = 0,
-                    Size = UDim2.new(1, -10, 0, 24),
-                    Position = UDim2.fromOffset(5, 5),
-                    PlaceholderText = "Search options...",
-                    ClearTextOnFocus = false,
-                    Text = "",
-                    ThemeTag = { TextColor3 = "Text", BackgroundColor3 = "Input", PlaceholderColor3 = "SubText" }
-                }
-            ) or nil
-
-            if searchBox then
+            local searchBox = nil
+            if showSearch then
+                searchBox = e(
+                    "TextBox",
+                    {
+                        FontFace = Font.new "rbxasset://fonts/families/GothamSSm.json",
+                        TextSize = 11,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        BackgroundTransparency = 0.7,
+                        BorderSizePixel = 0,
+                        Size = UDim2.new(1, -10, 0, 24),
+                        Position = UDim2.fromOffset(5, 5),
+                        PlaceholderText = "Search options...",
+                        ClearTextOnFocus = false,
+                        Text = "",
+                        ThemeTag = { TextColor3 = "Text", BackgroundColor3 = "Input", PlaceholderColor3 = "SubText" }
+                    }
+                )
                 e("UICorner", { CornerRadius = UDim.new(0, 4), Parent = searchBox })
             end
 
@@ -6637,16 +6652,17 @@ local aa = {
             }
 
             if bgImage ~= "" then
-                table.insert(popupChildren, e("ImageLabel", {
+                local customBg = e("ImageLabel", {
                     BackgroundTransparency = 1,
                     Image = bgImage,
                     ScaleType = Enum.ScaleType.Stretch,
                     Size = UDim2.fromScale(1, 1),
                     ImageTransparency = bgTransp,
                     ZIndex = 0,
-                }))
+                })
+                if customBg then table.insert(popupChildren, customBg) end
             else
-                table.insert(popupChildren, e("ImageLabel", {
+                local defaultShadow = e("ImageLabel", {
                     BackgroundTransparency = 1,
                     Image = "http://www.roblox.com/asset/?id=5554236805",
                     ScaleType = Enum.ScaleType.Slice,
@@ -6655,7 +6671,8 @@ local aa = {
                     Position = UDim2.fromOffset(-15, -15),
                     ImageColor3 = Color3.fromRGB(0, 0, 0),
                     ImageTransparency = 0.1,
-                }))
+                })
+                if defaultShadow then table.insert(popupChildren, defaultShadow) end
             end
 
             if searchBox then
@@ -6687,7 +6704,7 @@ local aa = {
                 }
             )
 
-            if k and k.OpenFrames then
+            if k and type(k.OpenFrames) == "table" and u then
                 table.insert(k.OpenFrames, u)
             end
 
@@ -6755,21 +6772,21 @@ local aa = {
                 s.CanvasSize = UDim2.fromOffset(0, canvasH)
             end
 
-            table.insert(m._connections, c.AddSignal(p:GetPropertyChangedSignal("AbsolutePosition"), function()
+            safeConnect(p:GetPropertyChangedSignal("AbsolutePosition"), function()
                 if m.Opened then updatePos() end
-            end))
-            table.insert(m._connections, c.AddSignal(p:GetPropertyChangedSignal("AbsoluteSize"), function()
+            end)
+            safeConnect(p:GetPropertyChangedSignal("AbsoluteSize"), function()
                 if m.Opened then
                     updatePos()
                     updateSize()
                 end
-            end))
-            table.insert(m._connections, c.AddSignal(r:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+            end)
+            safeConnect(r:GetPropertyChangedSignal("AbsoluteContentSize"), function()
                 if m.Opened then
                     updateCanvas()
                     updateSize()
                 end
-            end))
+            end)
 
             local function isPointInside(absPos, absSize, pt)
                 return pt.X >= absPos.X and pt.X <= (absPos.X + absSize.X)
@@ -6777,7 +6794,7 @@ local aa = {
             end
 
             -- Outside click listener: ignores clicks on toggle button or popup
-            table.insert(m._connections, c.AddSignal(ag.InputBegan, function(inp)
+            safeConnect(ag.InputBegan, function(inp)
                 if not m.Opened then return end
                 if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
                     local mousePos = Vector2.new(inp.Position.X, inp.Position.Y)
@@ -6789,12 +6806,12 @@ local aa = {
                     end
                     m:Close()
                 end
-            end))
+            end)
 
             -- Toggle button listener
-            table.insert(m._connections, c.AddSignal(p.MouseButton1Click, function()
+            safeConnect(p.MouseButton1Click, function()
                 m:Toggle()
-            end))
+            end)
 
             local sf = h.ScrollFrame
 
@@ -6808,10 +6825,9 @@ local aa = {
                 updateCanvas()
                 updatePos()
 
-                af:Create(o, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Rotation = 180 })
-                    :Play()
-                af:Create(t, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-                    { Size = UDim2.fromScale(1, 1) }):Play()
+                local ti = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+                af:Create(o, ti, { Rotation = 180 }):Play()
+                af:Create(t, ti, { Size = UDim2.fromScale(1, 1) }):Play()
 
                 if Animation and Animation.Apply and k then
                     pcall(function()
@@ -6826,8 +6842,8 @@ local aa = {
                 m.Opened = false
                 if sf then sf.ScrollingEnabled = true end
 
-                af:Create(o, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), { Rotation = 0 })
-                    :Play()
+                local ti = TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+                af:Create(o, ti, { Rotation = 0 }):Play()
                 t.Size = UDim2.fromScale(1, 0.6)
                 u.Visible = false
 
@@ -6847,45 +6863,45 @@ local aa = {
             end
 
             -- Auto-close if Tab or Container is hidden
-            table.insert(m._connections, c.AddSignal(l.Frame:GetPropertyChangedSignal("Visible"), function()
+            safeConnect(l.Frame:GetPropertyChangedSignal("Visible"), function()
                 if not l.Frame.Visible and m.Opened then
                     m:Close()
                 end
-            end))
+            end)
 
             if h.Container and h.Container:IsA("GuiObject") then
-                table.insert(m._connections, c.AddSignal(h.Container:GetPropertyChangedSignal("Visible"), function()
+                safeConnect(h.Container:GetPropertyChangedSignal("Visible"), function()
                     if not h.Container.Visible and m.Opened then
                         m:Close()
                     end
-                end))
+                end)
             end
 
             -- Auto-close if Window is minimized / hidden
             if k and k.Window then
                 local winRoot = k.Window.Root or (k.Window.Frame and k.Window.Frame.Parent)
                 if winRoot and winRoot:IsA("GuiObject") then
-                    table.insert(m._connections, c.AddSignal(winRoot:GetPropertyChangedSignal("Visible"), function()
+                    safeConnect(winRoot:GetPropertyChangedSignal("Visible"), function()
                         if not winRoot.Visible and m.Opened then
                             m:Close()
                         end
-                    end))
+                    end)
                 end
             end
 
             -- Clean up if element is destroyed
-            table.insert(m._connections, c.AddSignal(l.Frame.AncestryChanged, function(_, newParent)
+            safeConnect(l.Frame.AncestryChanged, function(_, newParent)
                 if not newParent then
                     m:Destroy()
                 end
-            end))
+            end)
 
             function m:Display()
                 local text = ""
                 if m.Multi then
                     local parts = {}
                     for _, val in ipairs(m.Values) do
-                        if m.Value[val] then
+                        if val ~= nil and m.Value[val] then
                             table.insert(parts, tostring(val))
                         end
                     end
@@ -6979,7 +6995,7 @@ local aa = {
                     Value  = nil,
                 }
 
-                c.AddSignal(row.MouseButton1Click, function()
+                safeConnect(row.MouseButton1Click, function()
                     local currentVal = item.Value
                     if currentVal == nil then return end
 
@@ -7005,11 +7021,13 @@ local aa = {
                     end
                 end)
 
-                c.AddSignal(row.MouseEnter, function()
-                    af:Create(row, TweenInfo.new(0.1), { BackgroundTransparency = 0.85 }):Play()
+                safeConnect(row.MouseEnter, function()
+                    local ti = TweenInfo.new(0.1)
+                    af:Create(row, ti, { BackgroundTransparency = 0.85 }):Play()
                 end)
-                c.AddSignal(row.MouseLeave, function()
-                    af:Create(row, TweenInfo.new(0.1), { BackgroundTransparency = 1 }):Play()
+                safeConnect(row.MouseLeave, function()
+                    local ti = TweenInfo.new(0.1)
+                    af:Create(row, ti, { BackgroundTransparency = 1 }):Play()
                 end)
 
                 m.ButtonPool[index] = item
@@ -7071,7 +7089,9 @@ local aa = {
                 if m.Multi then
                     local out = {}
                     for _, val in ipairs(m.Values) do
-                        if m.Value[val] then table.insert(out, val) end
+                        if val ~= nil and m.Value[val] then
+                            table.insert(out, val)
+                        end
                     end
                     return out
                 end
@@ -7107,7 +7127,7 @@ local aa = {
             end
 
             if searchBox then
-                table.insert(m._connections, c.AddSignal(searchBox:GetPropertyChangedSignal("Text"), function()
+                safeConnect(searchBox:GetPropertyChangedSignal("Text"), function()
                     if filterTimer then filterTimer:Disconnect() end
                     filterTimer = _RS_dd.Stepped:Connect(function()
                         applyFilter()
@@ -7116,7 +7136,7 @@ local aa = {
                             filterTimer = nil
                         end
                     end)
-                end))
+                end)
             end
 
             function m:Destroy()
