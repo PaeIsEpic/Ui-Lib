@@ -1638,7 +1638,6 @@ local aa = {
         z.ProgressBar = z["AddProgressBar"]
         function x.CreateWindow(C, D)
             assert(D.Title, "Window - Missing Title")
-            D.Size = D.Size or UDim2.fromOffset(760, 560)
             if x.Window then
                 print "You cannot create more than one window."
                 return
@@ -4139,167 +4138,6 @@ local aa = {
                 setmetatable(B, v)
                 return B
             end
-            -- Obsidian-style left/right groupboxes.
-            -- Each groupbox owns its own bordered container and control list.
-            local function _getGroupboxRow(tab, side)
-                tab._GroupboxRows = tab._GroupboxRows or {}
-                local row = tab._GroupboxRows[#tab._GroupboxRows]
-
-                if not row or not row.Parent or row[side] then
-                    tab._elementCount = (tab._elementCount or 0) + 1
-                    row = j.New("Frame", {
-                        Name = "GroupboxRow_" .. tostring(tab._elementCount),
-                        Size = UDim2.new(1, 0, 0, 0),
-                        AutomaticSize = Enum.AutomaticSize.Y,
-                        BackgroundTransparency = 1,
-                        BorderSizePixel = 0,
-                        LayoutOrder = tab._elementCount,
-                        Parent = tab.Container,
-                    })
-
-                    j.New("UIListLayout", {
-                        FillDirection = Enum.FillDirection.Horizontal,
-                        HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                        VerticalAlignment = Enum.VerticalAlignment.Top,
-                        Padding = UDim.new(0, 6),
-                        SortOrder = Enum.SortOrder.LayoutOrder,
-                        Parent = row,
-                    })
-
-                    tab._GroupboxRows[#tab._GroupboxRows + 1] = row
-                end
-
-                return row
-            end
-
-            local function _newGroupbox(tab, side, title, iconKey)
-                local row = _getGroupboxRow(tab, side)
-                local parent = row
-                local holder = j.New("Frame", {
-                    Name = side .. "Groupbox",
-                    Size = UDim2.new(0.5, -3, 0, 0),
-                    AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundTransparency = 0.04,
-                    BorderSizePixel = 0,
-                    LayoutOrder = side == "Left" and 1 or 2,
-                    Parent = parent,
-                    ThemeTag = {BackgroundColor3 = "Element"},
-                })
-                j.New("UICorner", {CornerRadius = UDim.new(0, 8), Parent = holder})
-                j.New("UIStroke", {
-                    Thickness = 1,
-                    Transparency = 0.5,
-                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-                    ThemeTag = {Color = "InElementBorder"},
-                    Parent = holder,
-                })
-                j.New("UIPadding", {
-                    PaddingTop = UDim.new(0, 8),
-                    PaddingBottom = UDim.new(0, 8),
-                    PaddingLeft = UDim.new(0, 8),
-                    PaddingRight = UDim.new(0, 8),
-                    Parent = holder,
-                })
-
-                local header = j.New("Frame", {
-                    Name = "Header",
-                    Size = UDim2.new(1, 0, 0, 24),
-                    BackgroundTransparency = 1,
-                    Parent = holder,
-                })
-
-                local titleOffset = 0
-                if iconKey then
-                    local ico = j.New("ImageLabel", {
-                        Name = "Icon",
-                        Size = UDim2.fromOffset(15, 15),
-                        Position = UDim2.fromOffset(0, 4),
-                        BackgroundTransparency = 1,
-                        ImageTransparency = 0.15,
-                        ThemeTag = {ImageColor3 = "Text"},
-                        Parent = header,
-                    })
-                    titleOffset = 21
-                    task.defer(function()
-                        local lib = tab.Library or e(aj)
-                        local ic = lib and lib.GetIcon and lib:GetIcon(iconKey)
-                        if ic then
-                            if type(ic) == "table" then
-                                ico.Image = ic.Image or ""
-                                ico.ImageRectOffset = ic.ImageRectOffset or Vector2.new()
-                                ico.ImageRectSize = ic.ImageRectSize or Vector2.new()
-                            else
-                                ico.Image = tostring(ic)
-                            end
-                        end
-                    end)
-                end
-
-                j.New("TextLabel", {
-                    Name = "Title",
-                    Size = UDim2.new(1, -titleOffset, 1, 0),
-                    Position = UDim2.fromOffset(titleOffset, 0),
-                    BackgroundTransparency = 1,
-                    Text = tostring(title or "Groupbox"),
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    TextYAlignment = Enum.TextYAlignment.Center,
-                    FontFace = Font.new("rbxassetid://12187365364", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
-                    TextSize = 14,
-                    ThemeTag = {TextColor3 = "Text"},
-                    Parent = header,
-                })
-
-                local container = j.New("Frame", {
-                    Name = "Container",
-                    Size = UDim2.new(1, 0, 0, 0),
-                    AutomaticSize = Enum.AutomaticSize.Y,
-                    BackgroundTransparency = 1,
-                    Parent = holder,
-                })
-                j.New("UIListLayout", {
-                    Padding = UDim.new(0, 5),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                    Parent = container,
-                })
-
-                local obj = {
-                    Type = "Groupbox",
-                    Container = container,
-                    ScrollFrame = tab.ScrollFrame or tab.Container,
-                    Frame = holder,
-                    Header = header,
-                    TitleLabel = header:FindFirstChild("Title"),
-                    _elementCount = 0,
-                    _GroupboxSide = side,
-                }
-
-                -- Keep groupbox height synchronized with its control contents.
-                local layout = container:FindFirstChildWhichIsA("UIListLayout")
-                if layout then
-                    j.AddSignal(layout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
-                        container.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y)
-                    end)
-                end
-
-                row[side] = holder
-                setmetatable(obj, z)
-                return obj
-            end
-
-            function x.AddLeftGroupbox(z, title, iconKey)
-                return _newGroupbox(z, "Left", title, iconKey)
-            end
-
-            function x.AddRightGroupbox(z, title, iconKey)
-                return _newGroupbox(z, "Right", title, iconKey)
-            end
-
-            x.LeftGroupbox = x.AddLeftGroupbox
-            x.RightGroupbox = x.AddRightGroupbox
-            x.AddLeftGroupBox = x.AddLeftGroupbox
-            x.AddRightGroupBox = x.AddRightGroupbox
-
-
             function x.AddCollapsibleSection(z, A, iconKey, openState)
                 -- Accept the same calling convention as AddSection: (Title, Icon).
                 -- Also accept a config table for backward compatibility: { Title=, Icon=, Open= }.
@@ -6995,37 +6833,10 @@ local aa = {
             w()
             c.AddSignal(p:GetPropertyChangedSignal "AbsolutePosition", w)
             c.AddSignal(p:GetPropertyChangedSignal "AbsoluteSize", function() y() w() end)
-            -- OutsideWindow popups live in PopupGUI. Close them when the actual
-            -- window is hidden, otherwise the popup can visually remain behind.
-            pcall(function()
-                local windowRoot = h.Library and h.Library.Window and h.Library.Window.Root
-                if windowRoot then
-                    c.AddSignal(windowRoot:GetPropertyChangedSignal("Visible"), function()
-                        if not windowRoot.Visible and l.Opened then
-                            l:Close()
-                        end
-                    end)
-                end
-            end)
-            pcall(function()
-                local gui = h.Library and h.Library.GUI
-                if gui then
-                    c.AddSignal(gui.Destroying, function()
-                        if l.Opened then
-                            l:Close()
-                        end
-                    end)
-                end
-            end)
-
             c.AddSignal(
                 p.MouseButton1Click,
                 function()
-                    if l.Opened then
-                        l:Close()
-                    else
-                        l:Open()
-                    end
+                    l:Open()
                 end
             )
             c.AddSignal(
@@ -7185,7 +6996,7 @@ local aa = {
                     source = "rbxassetid://" .. tostring(source)
                 end
 
-                if type(source) ~= "string" or source == "" then return ""
+                if type(source) ~= "string" or source == "" then return "" end
                 if source:match("^rbxassetid://") or source:match("^rbxasset://") then
                     return source
                 end
@@ -7483,29 +7294,9 @@ local aa = {
             end
 
             function l.SetValues(B, C)
-                if type(C) ~= "table" then
-                    return
+                if C then
+                    l.Values = C
                 end
-
-                -- Avoid rebuilding every option when a periodic refresh produces
-                -- the exact same list. This is intentionally a very small optimization
-                -- so the normal dropdown implementation remains untouched.
-                local oldValues = l.Values
-                local changed = (type(oldValues) ~= "table") or (#oldValues ~= #C)
-                if not changed then
-                    for index = 1, #C do
-                        if oldValues[index] ~= C[index] then
-                            changed = true
-                            break
-                        end
-                    end
-                end
-
-                if not changed then
-                    return
-                end
-
-                l.Values = C
                 l:BuildDropdownList()
             end
             function l.OnChanged(B, C)
@@ -7897,6 +7688,7 @@ local aa = {
 
             local initialTitle = d.Title
             local initialContent = d.Content
+            local initialInline = d.Inline == true
 
             local e = ac(ag.Element)(
                 initialTitle or "",
@@ -7908,16 +7700,55 @@ local aa = {
             e.Frame.BackgroundTransparency = 0.92
             e.Border.Transparency = 0.6
 
-            -- Keep track of the current Paragraph values.
             e.Title = initialTitle
             e.Content = initialContent or ""
+            e.Inline = initialInline
 
-            -- Preserve the original Element methods before overriding them.
             local _SetTitle = e.SetTitle
             local _SetDesc = e.SetDesc
+            local labelHolder = e.LabelHolder
+            local labelLayout = labelHolder and labelHolder:FindFirstChildWhichIsA("UIListLayout")
 
-            -- Paragraph-specific title setter.
-            -- SetTitle(nil) or SetTitle("") hides the title.
+            local function applyInline(inline)
+                e.Inline = inline == true
+
+                if not labelHolder then
+                    return
+                end
+
+                if e.Inline then
+                    if labelLayout then
+                        labelLayout.FillDirection = Enum.FillDirection.Horizontal
+                        labelLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                        labelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                        labelLayout.Padding = UDim.new(0, 4)
+                    end
+
+                    e.TitleLabel.AutomaticSize = Enum.AutomaticSize.X
+                    e.TitleLabel.Size = UDim2.new(0, 0, 0, 14)
+                    e.TitleLabel.TextWrapped = false
+
+                    e.DescLabel.AutomaticSize = Enum.AutomaticSize.X
+                    e.DescLabel.Size = UDim2.new(0, 0, 0, 14)
+                    e.DescLabel.TextWrapped = false
+                else
+                    if labelLayout then
+                        labelLayout.FillDirection = Enum.FillDirection.Vertical
+                        labelLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+                        labelLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+                        labelLayout.Padding = UDim.new(0, 0)
+                    end
+
+                    e.TitleLabel.AutomaticSize = Enum.AutomaticSize.Y
+                    e.TitleLabel.Size = UDim2.new(1, 0, 0, 14)
+                    e.TitleLabel.TextWrapped = true
+
+                    e.DescLabel.AutomaticSize = Enum.AutomaticSize.Y
+                    e.DescLabel.Size = UDim2.new(1, 0, 0, 14)
+                    e.DescLabel.TextWrapped = true
+                end
+            end
+
             function e:SetTitle(value)
                 e.Title = value
 
@@ -7930,19 +7761,20 @@ local aa = {
                 end
             end
 
-            -- Paragraph-specific content setter.
             function e:SetContent(value)
                 value = value == nil and "" or tostring(value)
                 e.Content = value
                 _SetDesc(e, value)
             end
 
-            -- Update both fields at once.
-            --
-            -- Examples:
-            -- paragraph:SetParagraph({Title = "New title", Content = "Hello"})
-            -- paragraph:SetParagraph({Title = false, Content = "Hello"}) -- hide title
-            -- paragraph:SetParagraph({Content = "Hello"}) -- keep current title
+            function e:SetInline(value)
+                applyInline(value)
+            end
+
+            function e:IsInline()
+                return e.Inline == true
+            end
+
             function e:SetParagraph(config)
                 if type(config) ~= "table" then
                     return
@@ -7959,18 +7791,20 @@ local aa = {
                 if config.Content ~= nil then
                     e:SetContent(config.Content)
                 end
+
+                if config.Inline ~= nil then
+                    applyInline(config.Inline)
+                end
             end
 
-            -- Alias with a shorter name.
             e.Set = e.SetParagraph
 
-            -- Apply the initial visibility/content through the new API.
             e:SetTitle(initialTitle)
             e:SetContent(initialContent)
+            applyInline(initialInline)
 
             return e
         end
-
         return aj
     end,
     [26] = function() --[[ Slider_El ]]
